@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "agents": [
+    { "id": "template-analyst", "version": "v1", "status": "executable", "contractPath": "agents/template-analyst/v1/contract.json", "promptPath": "prompts/agents/template-analyst/v1/system.md" },
+    { "id": "evidence-analyst", "version": "v1", "status": "executable", "contractPath": "agents/evidence-analyst/v1/contract.json", "promptPath": "prompts/agents/evidence-analyst/v1/system.md" },
+    { "id": "narrative-architect", "version": "v1", "status": "executable", "contractPath": "agents/narrative-architect/v1/contract.json", "promptPath": "prompts/agents/narrative-architect/v1/system.md" },
+    { "id": "visual-director", "version": "v1", "status": "executable", "contractPath": "agents/visual-director/v1/contract.json", "promptPath": "prompts/agents/visual-director/v1/system.md" },
+    { "id": "variant-designer-compact", "version": "v1", "status": "executable", "contractPath": "agents/variant-designer-compact/v1/contract.json", "promptPath": "prompts/agents/variant-designer-compact/v1/system.md" },
+    { "id": "variant-designer-balanced", "version": "v1", "status": "executable", "contractPath": "agents/variant-designer-balanced/v1/contract.json", "promptPath": "prompts/agents/variant-designer-balanced/v1/system.md" },
+    { "id": "variant-designer-visual", "version": "v1", "status": "executable", "contractPath": "agents/variant-designer-visual/v1/contract.json", "promptPath": "prompts/agents/variant-designer-visual/v1/system.md" },
+    { "id": "semantic-critic", "version": "v1", "status": "executable", "contractPath": "agents/semantic-critic/v1/contract.json", "promptPath": "prompts/agents/semantic-critic/v1/system.md" },
+    { "id": "visual-critic", "version": "v1", "status": "executable", "contractPath": "agents/visual-critic/v1/contract.json", "promptPath": "prompts/agents/visual-critic/v1/system.md" },
+    { "id": "repair-planner", "version": "v1", "status": "executable", "contractPath": "agents/repair-planner/v1/contract.json", "promptPath": "prompts/agents/repair-planner/v1/system.md" },
+    { "id": "final-jury", "version": "v1", "status": "executable", "contractPath": "agents/final-jury/v1/contract.json", "promptPath": "prompts/agents/final-jury/v1/system.md" }
+  ]
+}

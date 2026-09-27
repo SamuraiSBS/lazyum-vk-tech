@@ -1,0 +1,18 @@
+{
+  "name": "@studydeck/pptxgenjs",
+  "version": "4.0.1-studydeck.0",
+  "private": true,
+  "description": "PptxGenJS 4.0.1 runtime vendored without its unused vulnerable image-size dependency.",
+  "license": "MIT",
+  "main": "./dist/pptxgen.cjs.js",
+  "types": "./types/index.d.ts",
+  "files": [
+    "dist",
+    "types",
+    "LICENSE",
+    "NOTICE.md"
+  ],
+  "dependencies": {
+    "jszip": "^3.10.1"
+  }
+}

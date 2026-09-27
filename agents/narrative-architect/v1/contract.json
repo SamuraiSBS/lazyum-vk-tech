@@ -1,0 +1,10 @@
+{
+  "id": "narrative-architect",
+  "version": "v1",
+  "status": "executable",
+  "kind": "strict_structured_role",
+  "entrypoint": "src/lib/agent-contracts.ts#narrativeArchitectInputSchema -> #narrativePlanSchema",
+  "input": "Brief, TemplateInterpretation, EvidencePack and bounded slide count",
+  "output": "Semantic NarrativePlan with slide order, messages and evidence references",
+  "prohibited": ["coordinates", "dimensions", "fonts", "colors", "PPTX/XML", "filesystem", "export"]
+}

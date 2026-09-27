@@ -1,0 +1,39 @@
+name: lazyum-vk-tech
+
+services:
+  hackathon-demo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: node:24.13.0-bookworm-slim@sha256:46feb5752989c05b8606e6323fbbc3db667d14ade1c24f5d0d44d9ca9909d607
+        DEBIAN_SNAPSHOT: 20260901T000000Z
+    platform: linux/amd64
+    image: lazyum-vk-tech:demo
+    environment:
+      HOSTNAME: 0.0.0.0
+      NEXT_TELEMETRY_DISABLED: "1"
+      NODE_ENV: production
+      PORT: "3030"
+      VK_HACKATHON_ARTIFACT_ROOT: /app/.data/artifacts
+      VK_HACKATHON_LLM_PROVIDER: deterministic
+      VK_HACKATHON_DEMO_AUTH_USER: "${VK_HACKATHON_DEMO_AUTH_USER:?Set VK_HACKATHON_DEMO_AUTH_USER in the deployment environment}"
+      VK_HACKATHON_DEMO_AUTH_PASSWORD: "${VK_HACKATHON_DEMO_AUTH_PASSWORD:?Set VK_HACKATHON_DEMO_AUTH_PASSWORD in the deployment environment}"
+    ports:
+      - "127.0.0.1:${HACKATHON_DEMO_PORT:-31422}:3030"
+    volumes:
+      - artifacts:/app/.data/artifacts
+    init: true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3030/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+volumes:
+  artifacts:

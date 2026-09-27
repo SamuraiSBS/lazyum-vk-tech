@@ -1,0 +1,24 @@
+{
+  "id": "semantic-audit",
+  "version": "v1",
+  "status": "executable",
+  "kind": "pure_typescript_advisory_function",
+  "entrypoint": "src/lib/skills/semantic-audit.ts#normalizeSemanticAudit",
+  "input": {
+    "artifactRefs": "Strict artifact IDs and their known slide IDs",
+    "renderedEvidenceRefs": "Strict PNG evidence IDs, SHA-256 digests, and known slide/artifact refs; no paths, URLs, or binary payloads",
+    "deterministicFindings": "Strict pre-existing deterministic findings with a known slide/artifact ref and optional known rendered-evidence ID"
+  },
+  "output": "Deterministically sorted advisory findings only, each with advisoryStatus=advisory and a stable semantic-audit:v1:<findingId> ID",
+  "guarantees": [
+    "Rejects unknown artifact, slide, rendered-evidence, and deterministic-finding references.",
+    "Rejects inconsistent slide/artifact or rendered-evidence references, duplicate IDs, and all extra fields.",
+    "Copies no authority or verdict field: advisory output has no fix, ignore, passed, export allow/block, or mutation command.",
+    "Produces the same normalized advisory findings for the same valid input."
+  ],
+  "prohibited": [
+    "fix, ignore, export allow/block, or any change to AuditReport.passed or export preflight",
+    "layout, XML, PPTX, canvas, renderer, or image-generation operations",
+    "network, shell, filesystem, model, VLM, MCP, provider, or runtime-pipeline calls"
+  ]
+}

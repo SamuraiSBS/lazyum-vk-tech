@@ -1,0 +1,43 @@
+{
+  "name": "@lazyum/vk-tech-hackathon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": "24.13.0",
+    "npm": "11.6.2"
+  },
+  "scripts": {
+    "dev": "next dev --webpack -p 3030",
+    "build": "next build --webpack",
+    "start": "next start -p 3030",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:smoke": "vitest run tests/e2e-smoke.test.ts",
+    "render-smoke": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/render-smoke.ps1",
+    "render-compare": "tsx tests/render-compare.ts",
+    "fixtures": "tsx tests/generate-fixtures.ts"
+  },
+  "dependencies": {
+    "@studydeck/pptxgenjs": "file:packages/pptxgenjs",
+    "fast-xml-parser": "^5.7.3",
+    "jszip": "^3.10.1",
+    "lucide-react": "^1.47.0",
+    "mammoth": "^1.11.0",
+    "next": "^16.3.0",
+    "pdf-parse": "^2.4.5",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^22.10.7",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

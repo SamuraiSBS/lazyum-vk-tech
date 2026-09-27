@@ -1,0 +1,10 @@
+{
+  "id": "template-analyst",
+  "version": "v1",
+  "status": "executable",
+  "kind": "strict_structured_role",
+  "entrypoint": "src/lib/agent-contracts.ts#templateAnalystInputSchema -> #templateInterpretationSchema",
+  "input": "Bounded template/layout summaries and safe render artifact references",
+  "output": "TemplateInterpretation with layout families, token roles, risks and no geometry authority",
+  "prohibited": ["filesystem", "network", "provider", "XML/PPTX mutation", "coordinates", "export"]
+}

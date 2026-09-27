@@ -1,0 +1,10 @@
+{
+  "id": "evidence-analyst",
+  "version": "v1",
+  "status": "executable",
+  "kind": "strict_structured_role",
+  "entrypoint": "src/lib/agent-contracts.ts#evidenceAnalystInputSchema -> #evidencePackSchema",
+  "input": "Brief, bounded source summaries and safe source artifact references",
+  "output": "EvidencePack whose claims carry sourceChunkId or factId references",
+  "prohibited": ["search", "invented facts", "unreferenced claims", "filesystem", "network", "provider"]
+}

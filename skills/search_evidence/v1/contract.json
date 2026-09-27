@@ -1,0 +1,22 @@
+{
+  "id": "search_evidence",
+  "version": "v1",
+  "status": "executable",
+  "kind": "pure_server_function",
+  "input": {
+    "normalizedContent": "NormalizedContent",
+    "request": "strict sourceChunkIds/factIds/query/excerpts selector"
+  },
+  "output": "Only existing sourceChunkId/factId pairs and exact source-chunk substrings",
+  "guarantees": [
+    "No network, shell, filesystem, layout, XML, or PPTX access.",
+    "Unknown IDs and non-exact excerpts are rejected.",
+    "A fact is returned only with its owning existing source chunk."
+  ],
+  "prohibited": [
+    "arbitrary result fields",
+    "coordinates",
+    "XML",
+    "layout or PPTX mutations"
+  ]
+}

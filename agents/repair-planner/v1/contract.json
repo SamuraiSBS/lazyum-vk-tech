@@ -1,0 +1,10 @@
+{
+  "id": "repair-planner",
+  "version": "v1",
+  "status": "executable",
+  "kind": "strict_structured_role",
+  "entrypoint": "src/lib/agent-contracts.ts#repairPlannerInputSchema -> #repairPlanSchema",
+  "input": "Variant plan, passing deterministic audit and two advisory critique reports",
+  "output": "Bounded repair operations with no direct mutation or export authority",
+  "prohibited": ["fatal-audit bypass", "coordinates", "XML/PPTX", "filesystem", "automatic retry loop"]
+}

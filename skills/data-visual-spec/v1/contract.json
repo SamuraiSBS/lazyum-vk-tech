@@ -1,0 +1,24 @@
+{
+  "id": "data-visual-spec",
+  "version": "v1",
+  "status": "executable",
+  "kind": "pure_typescript_function",
+  "entrypoint": "src/lib/skills/data-visual-spec.ts#createDataVisualSpec",
+  "input": {
+    "content": "Validated NormalizedContent with spreadsheet facts",
+    "plan": "Validated grounded PresentationPlan",
+    "draft": "Strict semantic table, chart, or diagram draft with factId/sourceChunkId-backed data"
+  },
+  "output": "Strict DataVisualSpec with native semantic series, categories, values, claimIds, and derived source/fact refs",
+  "guarantees": [
+    "Every numeric or categorical datum must match an existing spreadsheet fact and its owning source chunk.",
+    "Every datum must be cited by a selected grounded plan claim; unsupported claims are rejected.",
+    "Source refs are derived deterministically from accepted datum refs.",
+    "Unknown IDs, mismatched fact/source pairs, fact-value mismatches, and arbitrary fields are rejected."
+  ],
+  "prohibited": [
+    "network, search, model, shell, filesystem, or image-generation actions",
+    "coordinates, dimensions, colors, layout, canvas, XML, or PPTX commands",
+    "renderer, layout-engine, or export integration"
+  ]
+}

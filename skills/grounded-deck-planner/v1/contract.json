@@ -1,0 +1,23 @@
+{
+  "id": "grounded-deck-planner",
+  "version": "v1",
+  "status": "executable",
+  "kind": "server_adapter",
+  "input": {
+    "normalizedContent": "NormalizedContent",
+    "slideCount": "integer 5..15",
+    "provider": "optional LlmProvider"
+  },
+  "output": "PresentationPlan with source refs, groundingSummary, and skillVersions",
+  "guarantees": [
+    "Delegates plan creation to the deterministic planner/provider boundary.",
+    "Resolves every grounded claim through search_evidence before returning.",
+    "Fails closed for live providers with zero grounded coverage."
+  ],
+  "prohibited": [
+    "geometry calculation",
+    "PPTX creation",
+    "XML mutation",
+    "filesystem or network tools"
+  ]
+}

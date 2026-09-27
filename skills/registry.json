@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": [
+    {
+      "id": "grounded-deck-planner",
+      "version": "v1",
+      "status": "executable",
+      "contractPath": "skills/grounded-deck-planner/v1/contract.json"
+    },
+    {
+      "id": "search_evidence",
+      "version": "v1",
+      "status": "executable",
+      "contractPath": "skills/search_evidence/v1/contract.json"
+    },
+    {
+      "id": "data-visual-spec",
+      "version": "v1",
+      "status": "executable",
+      "contractPath": "skills/data-visual-spec/v1/contract.json"
+    },
+    {
+      "id": "semantic-audit",
+      "version": "v1",
+      "status": "executable",
+      "contractPath": "skills/semantic-audit/v1/contract.json"
+    }
+  ]
+}

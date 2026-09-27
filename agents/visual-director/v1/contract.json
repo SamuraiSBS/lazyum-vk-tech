@@ -1,0 +1,10 @@
+{
+  "id": "visual-director",
+  "version": "v1",
+  "status": "executable",
+  "kind": "strict_structured_role",
+  "entrypoint": "src/lib/agent-contracts.ts#visualDirectorInputSchema -> #visualSpecPackSchema",
+  "input": "Selected narrative, evidence graph and template interpretation",
+  "output": "Native-safe semantic visual intents with source references and bounded fallbacks",
+  "prohibited": ["geometry", "layout mutation", "XML/PPTX", "filesystem", "network", "image generation"]
+}

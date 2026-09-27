@@ -1,0 +1,10 @@
+{
+  "id": "final-jury",
+  "version": "v1",
+  "status": "executable",
+  "kind": "strict_structured_role",
+  "entrypoint": "src/lib/agent-contracts.ts#finalJuryInputSchema -> #variantRankingSchema",
+  "input": "Three variants, three passing audits, advisory critiques, repair history and evidence coverage",
+  "output": "Ranking of all three variants with a recommended default and remaining issues",
+  "prohibited": ["deleting variants", "overriding fatal audit", "export authority", "filesystem", "network"]
+}

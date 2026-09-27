@@ -1,0 +1,20 @@
+# Dockerfile-specific ignore for this standalone repository-root context.
+**/.git
+**/.env*
+!**/.env.example
+**/.data
+**/.agent-state
+**/node_modules
+**/.next
+**/tests
+**/test-results
+**/playwright-report
+**/coverage
+fixtures/render-goldens/**
+fixtures/templates/organizer/*.pptx
+**/*.test.*
+**/*.spec.*
+**/playwright.config.*
+**/vitest.config.*
+**/tsconfig.tsbuildinfo
+**/*.log

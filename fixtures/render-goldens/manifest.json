@@ -1,0 +1,1080 @@
+{
+  "version": 1,
+  "renderer": "libreoffice-impress-headless",
+  "rasterizer": "poppler-pdftoppm",
+  "width": 900,
+  "height": 1600,
+  "fixtures": [
+    {
+      "inputPath": "fixtures/templates/organizer/VK Tech шаблон.pptx",
+      "pageCount": 54,
+      "width": 900,
+      "height": 1600,
+      "pageSetSha256": "063fa079a0f7318028d9a8abd42b39db31dc60eda29976e86187717de6609f51",
+      "pages": [
+        {
+          "slideNumber": 1,
+          "byteSize": 813462,
+          "sha256": "e94877d5449b38d010f2258eb8ded2a5cf8ac631c4be53460fca9b6e4fbe4dbc",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 2,
+          "byteSize": 789277,
+          "sha256": "d14c809d096136553530cc8303d4f051ed4b828f78acece70aa4d894bda1d275",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 3,
+          "byteSize": 29121,
+          "sha256": "c3afb71fb8960dd2645174bf14bfb86dbd8986bf9e284a444a74a4889fd3c7b2",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 4,
+          "byteSize": 800967,
+          "sha256": "7dd2dd5056b0e243578cd7c72578dd836d4b2fdcd392f182afdd74863ba4547d",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 5,
+          "byteSize": 801965,
+          "sha256": "7935c9b11b8c449c4a6456df96b58928d8e65ea0fda9ed2cdd7e8d690400e73b",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 6,
+          "byteSize": 80495,
+          "sha256": "063fa43c44d878ce3293a3e5c39d6c53e883d98956ff14bd9f66272040a61235",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 7,
+          "byteSize": 247453,
+          "sha256": "35356bfce582ddecb2b8e46310b4c80000fa6ae334db798e2b696692747e9d95",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 8,
+          "byteSize": 243841,
+          "sha256": "52a92f1da934f37a6509d4ca2057d5d8739471a685f8643a3ffb2bbe641c04ca",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 9,
+          "byteSize": 25401,
+          "sha256": "90433a503b2a923a81cdc80f25d591370fab541f489c8edd2f701d3dd19b3dd9",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 10,
+          "byteSize": 48876,
+          "sha256": "c56da9ebcfffce8ad6046bf74ed87d04d63ed2a20f0e4e284f8617497b100ef9",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 11,
+          "byteSize": 39201,
+          "sha256": "0a137d37d7e677c6394dc53437c1c1bcce52b2984add1ffd4ae01b74d409866d",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 12,
+          "byteSize": 46601,
+          "sha256": "d40a523aabfb27ba90d39532ab7c5152f942a8dc21077053b48099b1067fd414",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 13,
+          "byteSize": 69949,
+          "sha256": "c9ece4385de69c5206ddde75da6d3c42643891858b54a7f9d5b0ea064c905846",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 14,
+          "byteSize": 53091,
+          "sha256": "3419b48837d13e5743168f0c1fd6c13de92cdc0a703ede8f139df708a6fd6421",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 15,
+          "byteSize": 102435,
+          "sha256": "a3425846248287fa9f832759ebf425bb0a6db6b2b85e88387032072ecfdb542e",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 16,
+          "byteSize": 82055,
+          "sha256": "d5d408c7778f4de0d91944f0e576d68c4017ac2b68ee9ec3b1cd571ad4b8ec0c",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 17,
+          "byteSize": 69828,
+          "sha256": "043f33e734b1a7fb7bcde374964f2a4b28363d19804f5370c6e122b6a43d547e",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 18,
+          "byteSize": 121473,
+          "sha256": "368ed16c8f661bbe735955a09cb81b289712d97e6f29b4de052e3ac6ad18eecd",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 19,
+          "byteSize": 114113,
+          "sha256": "9935fdc1c1bf9f51a602aed8ee04be1ba3db0f48e6c7de8433eae47f947e8372",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 20,
+          "byteSize": 32850,
+          "sha256": "4ebcec58db5d6149ef17aad262ceef97a63e958e4b3763239776ae80ddd4b493",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 21,
+          "byteSize": 61614,
+          "sha256": "53c1a07a8083d07adc09330129fa7f23ab94c854141143547d82450f924cceb0",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 22,
+          "byteSize": 154390,
+          "sha256": "152c3adaa244f36b1ddc6d8f785c9111a5f894fe4b4bda7af9ab1aa90852d359",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 23,
+          "byteSize": 83184,
+          "sha256": "a0c3d8b93db6c78430551d85c175a3b5b93fb4cd436b1931e967f4c563dfd360",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 24,
+          "byteSize": 44554,
+          "sha256": "076049a51ba5d6b80d3fa31fd0338192f64e0a55ef9d48427098d428f59f965a",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 25,
+          "byteSize": 59342,
+          "sha256": "43072d545ab3cad063f703a7b12026cb3bdbc5f19da765e1b5b0885f2986a0fc",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 26,
+          "byteSize": 73314,
+          "sha256": "1169759f4a8b1e458a10414f0f141776fdbcc655a3f4fe9944fbde9dd9494979",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 27,
+          "byteSize": 276287,
+          "sha256": "552c8b46f510ca08fdaf20f8d0fe0dbc40344beed391a30e437aecc9e8507014",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 28,
+          "byteSize": 241257,
+          "sha256": "4365dd333117d558b68be3521bc5cc882b05139c033ce5c9392cfa948646284a",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 29,
+          "byteSize": 112525,
+          "sha256": "88980c90a4e5d4978196e9f6bb95a990a9553b7b9659cf0666acfebd6678c55d",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 30,
+          "byteSize": 43324,
+          "sha256": "7111c4b0bde5c716570c8fc878814b7a424c51c459048ebb643b60e0db52c152",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 31,
+          "byteSize": 72766,
+          "sha256": "6819d2c3459b8319143571eff2a8f6593205653d213c994e2050b4f6d559fa57",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 32,
+          "byteSize": 68612,
+          "sha256": "be1ddc249caf0f3f97badc5682cda6d40abbabafc6b84b26aae63358f4804d8a",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 33,
+          "byteSize": 65961,
+          "sha256": "f10fd97ef48f9e5e86b39ae120e3a569e7b3741aca782a76ce6354dd13d941fe",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 34,
+          "byteSize": 55302,
+          "sha256": "2668ff80a305ef9c13ddcc429d7f8e5befacf608c92bdc69fa9d8955b590e221",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 35,
+          "byteSize": 56004,
+          "sha256": "1f3dc94ebfac08b9a181b20e47c785b042cda185e319aee3002068f83f550389",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 36,
+          "byteSize": 68897,
+          "sha256": "8dd7d57182a07216039ea2f26aa3a798b8a4652027f7abcf94fe3ae4d16dff70",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 37,
+          "byteSize": 62364,
+          "sha256": "aac0c52573f073a353f56e26394adca17a7ed772b3dddc22aef41258582291d8",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 38,
+          "byteSize": 194906,
+          "sha256": "5e2d6f2238bf10dec62e389e13ddb505d0af7b3df12205b8e4fc01553467d293",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 39,
+          "byteSize": 254131,
+          "sha256": "7a68f05df96dd0300e5572e556f28beb359f6079499dfa7cc17edfe49fe273a2",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 40,
+          "byteSize": 121906,
+          "sha256": "2889bd32f3089628b4f7f0c66489840c07c8f10b156fd95fb49dc61f30d88e54",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 41,
+          "byteSize": 77398,
+          "sha256": "1155ee8a93d4f39512fc2af851e6922907ee604983af69bca68b43229f22556e",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 42,
+          "byteSize": 29531,
+          "sha256": "865764f361955466cc545f6480744d72e7ae598d748891a9c9a0f5087d749110",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 43,
+          "byteSize": 309251,
+          "sha256": "51e922e9538e868f72a7b69bed662be9844be4c7efe5ddcdc7606736339be0b5",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 44,
+          "byteSize": 71951,
+          "sha256": "8c189d8a3ae1be15b65ff9b7747e60ceee73e0603cbf063106f932361f339699",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 45,
+          "byteSize": 119078,
+          "sha256": "c2b86dfed5336c07f4e7fc2629517e25556468618fb02ef18ffd4fafbc5fe926",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 46,
+          "byteSize": 127094,
+          "sha256": "3cc858e0555909ba17d53866deae7f1a39aa116ee2adad1ba8f39a3956d85c4b",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 47,
+          "byteSize": 37321,
+          "sha256": "90d2637b9eba1ad59024c712c5d4c5691f27659a843394d88b10459040c037cf",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 48,
+          "byteSize": 31500,
+          "sha256": "3cce41f3df1b7f64a175ea3c2bc995ee719d70e2ba14ba5d31f3d98bd1055ca4",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 49,
+          "byteSize": 57746,
+          "sha256": "1cb2cc20e7be6a603984f51ef9084d2c7ea4bfe35f6c655d5a4220a84f2f7f04",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 50,
+          "byteSize": 57388,
+          "sha256": "ad13c94b78e457849d7f24994828373305a5d5f0c15959391c0000ed52462f83",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 51,
+          "byteSize": 129556,
+          "sha256": "977e16e5c91413d1eea06b55129a8c684e1c34a45530f68a009296e5b7ae7472",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 52,
+          "byteSize": 45656,
+          "sha256": "eb368275b13ff39e64e26956e1585da01d18afa21a75f68c67da9d62188be364",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 53,
+          "byteSize": 209303,
+          "sha256": "c4d6317e12200311fc28c8a439d7bd973208998346a1c03a63ce058e555438ac",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 54,
+          "byteSize": 87624,
+          "sha256": "17ec1d305a1904f25485dd26db219fc8e81133d75eea8f4a17bfd44649fa8afa",
+          "width": 900,
+          "height": 1600
+        }
+      ],
+      "representatives": [
+        {
+          "slideNumber": 1,
+          "byteSize": 813462,
+          "sha256": "e94877d5449b38d010f2258eb8ded2a5cf8ac631c4be53460fca9b6e4fbe4dbc",
+          "width": 900,
+          "height": 1600,
+          "goldenPath": "images/fixture-1/slide-1.png"
+        },
+        {
+          "slideNumber": 27,
+          "byteSize": 276287,
+          "sha256": "552c8b46f510ca08fdaf20f8d0fe0dbc40344beed391a30e437aecc9e8507014",
+          "width": 900,
+          "height": 1600,
+          "goldenPath": "images/fixture-1/slide-27.png"
+        },
+        {
+          "slideNumber": 54,
+          "byteSize": 87624,
+          "sha256": "17ec1d305a1904f25485dd26db219fc8e81133d75eea8f4a17bfd44649fa8afa",
+          "width": 900,
+          "height": 1600,
+          "goldenPath": "images/fixture-1/slide-54.png"
+        }
+      ]
+    },
+    {
+      "inputPath": "fixtures/templates/organizer/VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx",
+      "pageCount": 29,
+      "width": 900,
+      "height": 1600,
+      "pageSetSha256": "adf90790fa8b7c08bb5c13695e55fd01aa280790884ca16a8173083d562467e3",
+      "pages": [
+        {
+          "slideNumber": 1,
+          "byteSize": 236345,
+          "sha256": "e1df884b337d2aec7bfc310c8c02b4a0058cca89dbeab2a56be29219d246ab80",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 2,
+          "byteSize": 116867,
+          "sha256": "0ecfb1f8fd114348c1dca07697664779c4d76624026d127645e1100c020bea03",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 3,
+          "byteSize": 167337,
+          "sha256": "b260286548d7876f61587c98dc891b4df131710b9306824edab99635763df131",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 4,
+          "byteSize": 292683,
+          "sha256": "49ab0d0db9c1a13184c0be15efa4ece9a1564586e65de29cb31122643c8273c0",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 5,
+          "byteSize": 167955,
+          "sha256": "9c3df550e259dda34104497e1446fbc131ddea8c871886118b6e9c40360196b3",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 6,
+          "byteSize": 62393,
+          "sha256": "1785700e1181fb57b3e3672fa8298ddfc5474a253c443482a5274e0337df953b",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 7,
+          "byteSize": 51194,
+          "sha256": "d24cda7e7f9380606e2da78c370d712fe2e1ad9866e8d5b33f0fa73ac9901d38",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 8,
+          "byteSize": 57725,
+          "sha256": "b18dbc998b40f890ad5b57dd273583ec46b487c2e7bafcd1d0a990250ca5e37a",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 9,
+          "byteSize": 59657,
+          "sha256": "121cade81d5405e5526efd1a68f46f1f97833e409908ce26d31026166faeee13",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 10,
+          "byteSize": 169003,
+          "sha256": "0d87459b943c4010de4a353430ba520feea2603d930ff4ba7655d59adccfef8b",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 11,
+          "byteSize": 91167,
+          "sha256": "730f186bdfdfa71c763741734aa664eb6b36a544c8fd8d23f6fe900bedcff87d",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 12,
+          "byteSize": 64457,
+          "sha256": "6d1c8e38df065ade9a8575c18694944bdea0ec64f2b5b870f2c88e8c066ec78c",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 13,
+          "byteSize": 331208,
+          "sha256": "57697d2f294400f84e263997c4f81541ab434df8a64ba7d75b70ff243deb4d8b",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 14,
+          "byteSize": 71035,
+          "sha256": "f9a4b1f919fb4b108b9c25215e3463749367ce78789e1c0a8f0508264d7b172e",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 15,
+          "byteSize": 94469,
+          "sha256": "801be6537c8b00cbbd37db831e0a097833efd0df1f2c08e32bdc97e494ea646d",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 16,
+          "byteSize": 85810,
+          "sha256": "fdd20a870df94a35a9e8c289cf312f50709ba89eed8f4a43a4bab856ff117075",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 17,
+          "byteSize": 74158,
+          "sha256": "6e0cbc8ba09c81908d92336eb11ead17184442dd1d3ab500f176723327047f74",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 18,
+          "byteSize": 73072,
+          "sha256": "3462321769741230e437522079996220715b52f4bfff77351dbf529d50b9d72e",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 19,
+          "byteSize": 232701,
+          "sha256": "7a597a3c178a462fb319a888279bbcd8e12561efa5f9e04752b6d29f0b8a279d",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 20,
+          "byteSize": 250548,
+          "sha256": "b2ebd6e0fd1a1c17a1c204e62251e1352da40207a5a70098a4e1783790ea6db1",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 21,
+          "byteSize": 229815,
+          "sha256": "5d0151c350c69b6c50f8f4602c8ea44627f1ed9d269e18d6040cdb6127d19153",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 22,
+          "byteSize": 371026,
+          "sha256": "cf0ef5765797cadc90989e70c84447674d543bdba5d786a1ad650b9481ef6f59",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 23,
+          "byteSize": 341545,
+          "sha256": "9ebeea11d3cabb51e8147ab7d9aff94c282b16d7e5f67160cb4efdb4c131f3a3",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 24,
+          "byteSize": 105413,
+          "sha256": "dd48d44b7ec3bbec182a63e3baa421b200def8302059f30b1f11f6314ad06b4e",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 25,
+          "byteSize": 520735,
+          "sha256": "0798080451793e6480da916be7a2205137dcac86a0a701e562b015cd578d5d70",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 26,
+          "byteSize": 299831,
+          "sha256": "66434b63f9f675639602c4c07ff8d2edd2e12042c7dfe780394c431afe262406",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 27,
+          "byteSize": 302505,
+          "sha256": "89fbef5c71e56be1a5bcd73b28592760e3953b749a6130dc3173d1269df8ae8f",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 28,
+          "byteSize": 155721,
+          "sha256": "02cba8e8323e92870bf12d614d30c954edb831d33399dec67638adb1afbf9443",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 29,
+          "byteSize": 251720,
+          "sha256": "7a9813ba973a00f975b0adea76e3f2fce967fd2a557524bf1b2f4d04034157d7",
+          "width": 900,
+          "height": 1600
+        }
+      ],
+      "representatives": [
+        {
+          "slideNumber": 1,
+          "byteSize": 236345,
+          "sha256": "e1df884b337d2aec7bfc310c8c02b4a0058cca89dbeab2a56be29219d246ab80",
+          "width": 900,
+          "height": 1600,
+          "goldenPath": "images/fixture-2/slide-1.png"
+        },
+        {
+          "slideNumber": 15,
+          "byteSize": 94469,
+          "sha256": "801be6537c8b00cbbd37db831e0a097833efd0df1f2c08e32bdc97e494ea646d",
+          "width": 900,
+          "height": 1600,
+          "goldenPath": "images/fixture-2/slide-15.png"
+        },
+        {
+          "slideNumber": 29,
+          "byteSize": 251720,
+          "sha256": "7a9813ba973a00f975b0adea76e3f2fce967fd2a557524bf1b2f4d04034157d7",
+          "width": 900,
+          "height": 1600,
+          "goldenPath": "images/fixture-2/slide-29.png"
+        }
+      ]
+    },
+    {
+      "inputPath": "fixtures/templates/organizer/Шаблон презентации VK Education.pptx",
+      "pageCount": 55,
+      "width": 900,
+      "height": 1600,
+      "pageSetSha256": "fbc3716158659ffbec27ece404fb1b96feb3cd0963844c37b1590e7df1d8ce4b",
+      "pages": [
+        {
+          "slideNumber": 1,
+          "byteSize": 60353,
+          "sha256": "3e1434ffc36a7a3b5721e7595b5c76afbdd67e38a71bd2d36ed98021b1878cf4",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 2,
+          "byteSize": 53561,
+          "sha256": "8a18486c3e4db99cedf458059d36eacdd20f050c1df8ff4ba38f228565ca8809",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 3,
+          "byteSize": 123279,
+          "sha256": "549155605eab8784bb08d8a38d298b4c5ad67bb06c041d9ed9ae81c5d20dfb74",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 4,
+          "byteSize": 68087,
+          "sha256": "bf8be584bed4d8a0ead879bd5db42d5b995d4ddc41bebebf3f39ad9fe7ca476a",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 5,
+          "byteSize": 41169,
+          "sha256": "74d172ae3e362b9c54b631aeb9cd953b64041bac74cc0673145b6f3296cb2af0",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 6,
+          "byteSize": 15671,
+          "sha256": "6c4e7c5c2d0a731d83903b1571cf86366173e131319efcd62a0ccea7a6c53064",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 7,
+          "byteSize": 79587,
+          "sha256": "ae40ba8b2c0316bb49dda2fdda07a9cea572e5108021dd56daf85212e68c18f1",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 8,
+          "byteSize": 83213,
+          "sha256": "d19059f72247ba1778b1f678f8920f40116920c2bb4d84dc1d2d975fa4b13360",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 9,
+          "byteSize": 59945,
+          "sha256": "898e2274c40f664db7e81664cf2cf6f631f1bb6b4fd413edcd442ff5dfae14c3",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 10,
+          "byteSize": 42357,
+          "sha256": "2c5a5c66bb86cd3d98971972f0d36e0b559138620814031a6ec09be87884a73d",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 11,
+          "byteSize": 58049,
+          "sha256": "d178e79298dc857bed44b5288b9523559828b31c4c777c36989772e7b0a7ff3e",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 12,
+          "byteSize": 37546,
+          "sha256": "2d84b3fe67819132a8871689f5d5fb97a16dc39062b3e124e0305230fe6b805b",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 13,
+          "byteSize": 57565,
+          "sha256": "4f4090aaf22d4cf843c5ecd342318251fe242294ea2340e1b4370880640e3cea",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 14,
+          "byteSize": 56920,
+          "sha256": "b5a28d43d2a8da4494570427c795486b8c57e887c0c3a7fdb8e0d3a10ecfc56a",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 15,
+          "byteSize": 67668,
+          "sha256": "ea821b45115ee29f6e80593223a6afa44fcd2b13d2580d1596c1f32ee69731bb",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 16,
+          "byteSize": 51652,
+          "sha256": "c3e956c77c257b7c90aba23602ad319143c732fd80eca1bdbf3913534cea2365",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 17,
+          "byteSize": 87457,
+          "sha256": "1d54bfd7c6ae7bedc47973338be6126c83b34bf77ba403e0b56089bbeece8d8f",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 18,
+          "byteSize": 56315,
+          "sha256": "ae783bd0078ad08b13ef27bcdb312ce677f151aeff78e2aa94cac6a2769c5f5c",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 19,
+          "byteSize": 83257,
+          "sha256": "254456da50b92593269b3b9a5434e99df2aadb7a80952e8cabb71a29c0487b2b",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 20,
+          "byteSize": 168221,
+          "sha256": "2ae2d165b5f86107322ed1762ae6d31fb0ee114253827cbd7b9a5ddd74378d85",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 21,
+          "byteSize": 47633,
+          "sha256": "8c212e826446c83f9b70dd7441c1d965cdd49ea25efbdb2811ad9e862927ec30",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 22,
+          "byteSize": 47176,
+          "sha256": "49faaebdd555e2719ca2da946d1b77d3978d22e248fea910e94ad89a237d2f34",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 23,
+          "byteSize": 78228,
+          "sha256": "e0ffccd014c5ee2994b0fcf9b1eea7d8c69bfeb98932b41701780fb9f064ba20",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 24,
+          "byteSize": 68190,
+          "sha256": "0483f3cf1bc3ab232e5e8dab2e80fc6cc3daa8365f6559b68c43d6b6510cbe37",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 25,
+          "byteSize": 283791,
+          "sha256": "10dda1650a646348cd0f4ac42744c944a53162ef924f40d0c329412ca25f979a",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 26,
+          "byteSize": 57359,
+          "sha256": "475b2436b5d995e1f31d89f0b8911ef1eac4b7fb8392c4cbae8e024ff76dba0a",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 27,
+          "byteSize": 57328,
+          "sha256": "d1a34dfb4006d2419fab24b791cb422ec2cb913de1a8ee696e24903635ddb52e",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 28,
+          "byteSize": 49566,
+          "sha256": "7834c04e0058759300f446b224391e675e2fb40c7b4fb98129ad3c4fd337462a",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 29,
+          "byteSize": 51747,
+          "sha256": "52b990bb32e549454f8ffc09cea34e60963185d654b20afde9337f54e81fc482",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 30,
+          "byteSize": 298456,
+          "sha256": "e5b9ac41c540dd30039407964a479805dd8199e04f131dc059eebd839f840a60",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 31,
+          "byteSize": 298926,
+          "sha256": "93ab7d65607be0d2d6d24da151cc5b2b6ad52bd7c31d2fa324ae349d8f8f5cb7",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 32,
+          "byteSize": 445127,
+          "sha256": "087a6fb467370e6a8d9ab93222a53633660419a3448d1c15397a0fb54ac39d2b",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 33,
+          "byteSize": 351929,
+          "sha256": "2701aa2281a4ea6581bfe2ceec52bd3bbe16c628c66cac623addfc23ce3092b5",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 34,
+          "byteSize": 703825,
+          "sha256": "4306976077878ba9a80e4bc921595aa5c710120a1fb71f3cec9c0c1c3df59bb3",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 35,
+          "byteSize": 998152,
+          "sha256": "7d44bd531f93f276d2fafff10a79a8d48017c859148e181b03ae50ae78dcff1f",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 36,
+          "byteSize": 768129,
+          "sha256": "c2cd05ca41668043597a5f7b3786a2b3ce49db8d92c339259f48c6020d26e92c",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 37,
+          "byteSize": 51780,
+          "sha256": "9cbdef2eda21e01a9fb0df08f7754cf93dcdb9eccce894298c7a46b3cf6b2eb8",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 38,
+          "byteSize": 110698,
+          "sha256": "f08fb30894834036aee83e36661984bfa8a77ad2b667396b5c80acbdb5980567",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 39,
+          "byteSize": 77104,
+          "sha256": "df3aa78f7a61bc940119a99ee788d57fa039816d28548eb67ecaf9739cfc43ba",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 40,
+          "byteSize": 180244,
+          "sha256": "4a8393ec70e922d58cd28c611d401e821bae9391f7b10639a119eb6931816b49",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 41,
+          "byteSize": 51778,
+          "sha256": "a7bb5fdc6a74bbc627007212825672213a887eb4fa5ddbd01c9c16d4c8291f67",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 42,
+          "byteSize": 42485,
+          "sha256": "fbbd14830ae773becbd6ec56edcdd7d806175fe3593975afc1f06641e23b7139",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 43,
+          "byteSize": 33916,
+          "sha256": "642e4d607ff50d47b138ed5222d0e09eec38124d716fd39bd6538c113494ef13",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 44,
+          "byteSize": 33499,
+          "sha256": "88614072141623059606a837d06f0b7572cc2f8f57fda18cf7282142bda450ae",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 45,
+          "byteSize": 103526,
+          "sha256": "b7e600e0c58a74cddbc901c0092e199fae89840f7b1f691538680a4a1ee33e9a",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 46,
+          "byteSize": 134448,
+          "sha256": "f91c4b719be8b15c08511d85eb1f6054e22ee3d1c6ec43b63b5fc9853a4bc4fd",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 47,
+          "byteSize": 66617,
+          "sha256": "f6c211bc453342ff01219389b2699684932cc8e702bf18cbace1888efb994a45",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 48,
+          "byteSize": 46621,
+          "sha256": "0707ff5424050515f6db8199ed161e0fe7a965f8344fd4452a68f03d4af36139",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 49,
+          "byteSize": 40003,
+          "sha256": "a4446216978210c53e4e3d3af4cbf0828747d2c5bafcb4b74e50c680fc57a593",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 50,
+          "byteSize": 59745,
+          "sha256": "528ea60fcae683318a09750dae439196406ed7168f49741e7b86d0abc5680d2b",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 51,
+          "byteSize": 78049,
+          "sha256": "dc38054485e95d20d6ba3aa40cd4fd638a22dab5f32f8c38bcb1b2da8a7d7a17",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 52,
+          "byteSize": 90783,
+          "sha256": "9e500e94fcbda54a50b23e2fb55a80a0f8e10f6d8f991ace245c9dd80cf15b59",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 53,
+          "byteSize": 55900,
+          "sha256": "f53efa8e02bc1724aacc6758a719b0dd12ec37081fd1773ae537cdaa2d9a90b5",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 54,
+          "byteSize": 68305,
+          "sha256": "58d7da44ef2cc7663a7e3d6a1dff1bdecb37aa6ed355ba558f51eb841f377210",
+          "width": 900,
+          "height": 1600
+        },
+        {
+          "slideNumber": 55,
+          "byteSize": 41537,
+          "sha256": "912990f431d1684606e055b4bd9691a97d3c7e86f635bff45e4210e44be6a715",
+          "width": 900,
+          "height": 1600
+        }
+      ],
+      "representatives": [
+        {
+          "slideNumber": 1,
+          "byteSize": 60353,
+          "sha256": "3e1434ffc36a7a3b5721e7595b5c76afbdd67e38a71bd2d36ed98021b1878cf4",
+          "width": 900,
+          "height": 1600,
+          "goldenPath": "images/fixture-3/slide-1.png"
+        },
+        {
+          "slideNumber": 28,
+          "byteSize": 49566,
+          "sha256": "7834c04e0058759300f446b224391e675e2fb40c7b4fb98129ad3c4fd337462a",
+          "width": 900,
+          "height": 1600,
+          "goldenPath": "images/fixture-3/slide-28.png"
+        },
+        {
+          "slideNumber": 55,
+          "byteSize": 41537,
+          "sha256": "912990f431d1684606e055b4bd9691a97d3c7e86f635bff45e4210e44be6a715",
+          "width": 900,
+          "height": 1600,
+          "goldenPath": "images/fixture-3/slide-55.png"
+        }
+      ]
+    }
+  ]
+}

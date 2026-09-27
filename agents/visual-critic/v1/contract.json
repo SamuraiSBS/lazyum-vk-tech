@@ -1,0 +1,10 @@
+{
+  "id": "visual-critic",
+  "version": "v1",
+  "status": "executable",
+  "kind": "strict_structured_role",
+  "entrypoint": "src/lib/agent-contracts.ts#criticInputSchema -> #critiqueReportSchema",
+  "input": "Variant plan, deterministic audit ref, rendered PNG refs and evidence pack",
+  "output": "Advisory-only visual CritiqueReport",
+  "prohibited": ["export verdict", "fix/ignore authority", "PPTX/XML mutation", "filesystem", "network"]
+}

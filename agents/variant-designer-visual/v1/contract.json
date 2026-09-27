@@ -1,0 +1,10 @@
+{
+  "id": "variant-designer-visual",
+  "version": "v1",
+  "status": "executable",
+  "kind": "strict_structured_role",
+  "entrypoint": "src/lib/agent-contracts.ts#variantDesignerInputSchema -> #variantPlanSchema",
+  "input": "Canonical narrative, visual intents, template interpretation and evidence graph",
+  "output": "Visual VariantPlan selecting observed layouts and semantic slots only",
+  "prohibited": ["arbitrary coordinates", "XML/PPTX", "filesystem", "export", "source mutation"]
+}
