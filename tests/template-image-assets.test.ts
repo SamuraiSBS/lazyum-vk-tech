@@ -193,6 +193,7 @@ describe("template image artifact graph", () => {
         .filter((element) => element.type === "image" && element.sourceFile === asset.sourceFile
           && element.relationshipId === asset.relationshipId)
         .map((element) => ({ layoutId: layout.id, sourceElementId: element.id,
+          ...(element.rotation ? { rotation: element.rotation } : {}),
           ...(element.crop ? { crop: element.crop } : {}) })));
       expect(asset.placements).toEqual(placements);
       const bytes = (await store.readPublishedArtifact(job.jobId, asset.relativePath)).contents;

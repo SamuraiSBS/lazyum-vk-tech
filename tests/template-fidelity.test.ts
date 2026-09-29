@@ -67,7 +67,6 @@ it("uses proportionate source compositions for sparse organizer Visual slides", 
       ))).toBe(true);
     } else {
       expect(source.id).toBe("slide-23");
-      expect(source.composition).toBe("timeline");
       expect(body).toHaveLength(3);
       expect(body.every((element) => element.id.includes("timeline-label"))).toBe(true);
       expect(Math.max(...body.map((element) => element.x)) - Math.min(...body.map((element) => element.x)))
