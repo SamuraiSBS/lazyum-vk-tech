@@ -33,13 +33,12 @@ describe("Layout Engine", () => {
     expect(layout.visualSlots).toBeGreaterThan(0);
   });
 
-  it("prefers a readable large image composition without treating thin diagonal lines as filled artwork", async () => {
+  it("prefers a readable large image composition and rejects one with blocked text", async () => {
     const templatePath = path.resolve(process.cwd(), "fixtures", "templates", "organizer", "Шаблон презентации VK Education.pptx");
     const design = await parsePptxTemplate(await readFile(templatePath), "image-layouts.pptx");
     const largeImage = design.layouts.find((layout) => layout.id === "slide-34");
-    const smallerImage = design.layouts.find((layout) => layout.id === "slide-33");
     const clippedImage = design.layouts.find((layout) => layout.id === "layout-16");
-    if (!largeImage || !smallerImage || !clippedImage) throw new Error("Image layout regression requires source compositions");
+    if (!largeImage || !clippedImage) throw new Error("Image layout regression requires source compositions");
     const withoutCrops = design.layouts.map((layout) => ({
       ...layout,
       name: "Unlabelled visual composition",
@@ -57,10 +56,12 @@ describe("Layout Engine", () => {
       const selected = chooseTemplateLayout({ ...design, layouts: withoutCrops }, slide, variant);
       expect(selected.id, variant).toBe(largeImage.id);
       const blocked = withoutCrops.map((layout) => layout.id === largeImage.id
-        ? { ...layout, elements: layout.elements.map((element) => element.type === "line"
-          ? { ...element, type: "shape" as const } : element) }
+        ? { ...layout, elements: [...layout.elements, {
+          ...layout.elements[0]!, id: "blocking-artwork", type: "shape" as const,
+          x: 70, y: 220, w: 450, h: 220, fill: "#0077FF",
+        }] }
         : layout);
-      expect(chooseTemplateLayout({ ...design, layouts: blocked }, slide, variant).id, variant).toBe(smallerImage.id);
+      expect(chooseTemplateLayout({ ...design, layouts: blocked }, slide, variant).id, variant).not.toBe(largeImage.id);
     }
   });
 

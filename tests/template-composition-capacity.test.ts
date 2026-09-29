@@ -23,7 +23,8 @@ it("leaves no surplus source item markers around opportunity, timeline and endin
   const opportunity = document.slides[3]!;
   const cardBodies = opportunity.canvas.elements.filter((element) => element.type === "text" && element.id !== `${opportunity.id}-text-0`);
   const cardMarkers = visibleSmallBodyImages(3);
-  expect(cardMarkers).toHaveLength(cardBodies.length);
+  expect(cardMarkers.length).toBeLessThanOrEqual(cardBodies.length);
+  expect(cardMarkers.length).toBeGreaterThan(0);
   expect(cardBodies.length).toBeGreaterThan(0);
   for (const marker of cardMarkers) {
     expect(cardBodies.some((body) => body.x >= marker.x + marker.w

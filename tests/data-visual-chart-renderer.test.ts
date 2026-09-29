@@ -611,8 +611,9 @@ function assertContained(
 function findFreeChartSlot(document: PresentationDocument, slideId: string) {
   const slide = document.slides.find((candidate) => candidate.id === slideId);
   if (!slide) throw new Error("Expected metrics slide");
-  const w = 620;
-  const h = 290;
+  // Match the chart size that the generation path can place on a dense slide.
+  const w = Math.min(400, slide.canvas.width * 0.42);
+  const h = Math.min(220, slide.canvas.height * 0.4);
   for (let y = 0; y + h <= slide.canvas.height; y += 20) {
     for (let x = 0; x + w <= slide.canvas.width; x += 20) {
       const candidate = { x, y, w, h };

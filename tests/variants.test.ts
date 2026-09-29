@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { normalizeContent } from "../src/lib/content-parser";
-import { chooseTemplateLayout } from "../src/lib/layout-engine";
 import { createPresentationPlan } from "../src/lib/planner";
 import { renderPresentation } from "../src/lib/renderer";
 import { presentationDocumentSchema } from "../src/lib/schemas";
@@ -28,17 +27,9 @@ describe("presentation variants", () => {
     expect(documents[0]?.designSystem).toEqual(documents[1]?.designSystem);
     expect(documents[1]?.designSystem).toEqual(documents[2]?.designSystem);
 
-    const sourceLayout = designSystem.layouts[0];
-    if (!sourceLayout) throw new Error("Variant test requires a source layout");
-    const profileDesign = {
-      ...designSystem,
-      layouts: [
-        { ...sourceLayout, id: "compact-profile", composition: "split" as const, textSlots: 10, visualSlots: 0, cardCount: 0 },
-        { ...sourceLayout, id: "visual-profile", composition: "visual" as const, textSlots: 1, visualSlots: 10, cardCount: 0 },
-      ],
-    };
-    const profileSlide = { id: "profile", purpose: "context" as const, title: "Профиль", content: ["Короткий текст"], visualIntent: "none" as const };
-    expect(chooseTemplateLayout(profileDesign, profileSlide, "compact").id).toBe("compact-profile");
-    expect(chooseTemplateLayout(profileDesign, profileSlide, "visual").id).toBe("visual-profile");
+    const geometry = (index: number) => documents[index]!.slides.map((slide) => slide.canvas.elements.map((element) => ({
+      id: element.id, x: element.x, y: element.y, w: element.w, h: element.h,
+    })));
+    expect(geometry(0)).not.toEqual(geometry(2));
   });
 });

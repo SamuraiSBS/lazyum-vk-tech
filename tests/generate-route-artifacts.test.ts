@@ -2,6 +2,18 @@ import { readFile, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("../src/lib/request-guards", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/request-guards")>();
+  const guard = actual.createProcessRequestGuard({
+    maxGenerationRequestsPerWindow: 100,
+    maxExportRequestsPerWindow: 100,
+  });
+  return {
+    ...actual,
+    acquireHeavyOperation: (operationClass: "generation" | "export") => guard.acquireHeavyOperation(operationClass),
+  };
+});
 import { GET as getArtifact } from "../src/app/api/artifacts/[jobId]/[...path]/route";
 import { POST } from "../src/app/api/generate/route";
 import { ArtifactStore, sha256 } from "../src/lib/artifact-store";
