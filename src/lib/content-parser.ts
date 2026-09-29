@@ -16,6 +16,16 @@ const MAX_SOURCE_BYTES = 12 * 1024 * 1024;
 const MAX_SOURCE_FILES = 12;
 const MAX_TEXT_CHARS = 50_000;
 const WORDPROCESSINGML_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const PPTX_PRESENTATION_NAMESPACES = new Set([
+  "http://schemas.openxmlformats.org/presentationml/2006/main",
+  "http://purl.oclc.org/ooxml/presentationml/main",
+]);
+const PPTX_OFFICE_RELATIONSHIP_NAMESPACES = new Set([
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+  "http://purl.oclc.org/ooxml/officeDocument/relationships",
+]);
+const PPTX_SLIDE_RELATIONSHIP_TYPES = new Set([...PPTX_OFFICE_RELATIONSHIP_NAMESPACES].map((uri) => `${uri}/slide`));
+const PPTX_PACKAGE_RELATIONSHIP_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/relationships";
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
@@ -719,12 +729,16 @@ function decodeXlsxXmlEntities(value: string) {
 
 async function extractPptxSource(buffer: Buffer): Promise<ExtractedSource> {
   const zip = await JSZip.loadAsync(buffer, { createFolders: false, checkCRC32: false });
-  const names = Object.keys(zip.files)
+  const slideFiles = Object.keys(zip.files)
     .filter((name) => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
     .sort((left, right) => Number(left.match(/\d+/)?.[0] || 0) - Number(right.match(/\d+/)?.[0] || 0));
+  const ordered = await resolvePptxSourceSlideOrder(zip);
+  // An incomplete package can still provide text, but its physical slide names do not
+  // establish either display order or a trustworthy visible-slide locator.
+  const names = ordered || slideFiles;
   const chunks: ChunkDraft[] = [];
   const slideTexts: string[] = [];
-  for (const name of names) {
+  for (const [index, name] of names.entries()) {
     const xml = await zip.files[name]?.async("string");
     if (!xml) continue;
     if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error("Unsafe XML declaration in " + name);
@@ -732,12 +746,116 @@ async function extractPptxSource(buffer: Buffer): Promise<ExtractedSource> {
     slideTexts.push(text);
     chunks.push({
       text: limitText(text),
-      locator: "slide:" + Number(name.match(/slide(\d+)/i)?.[1] || 0),
-      precision: "exact",
+      locator: ordered ? `slide:${index + 1}` : "document",
+      precision: ordered ? "exact" : "document",
     });
   }
-  if (!chunks.length) chunks.push({ text: "", locator: "slide:1", precision: "exact" });
+  if (!chunks.length) chunks.push({ text: "", locator: "document", precision: "document" });
   return { text: slideTexts.join("\n\n"), chunks };
+}
+
+async function resolvePptxSourceSlideOrder(zip: JSZip): Promise<string[] | null> {
+  const presentation = zip.file("ppt/presentation.xml");
+  const relationships = zip.file("ppt/_rels/presentation.xml.rels");
+  if (!presentation || !relationships) return null;
+  const presentationXml = await presentation.async("string");
+  const relationshipsXml = await relationships.async("string");
+  if ([presentationXml, relationshipsXml].some((xml) =>
+    /<!DOCTYPE|<!ENTITY/iu.test(xml) || XMLValidator.validate(xml) !== true)) return null;
+
+  const presentationRoot = pptxElement(xmlParser.parse(presentationXml), "presentation", PPTX_PRESENTATION_NAMESPACES);
+  const relationshipRoot = pptxElement(xmlParser.parse(relationshipsXml), "Relationships", new Set([PPTX_PACKAGE_RELATIONSHIP_NAMESPACE]));
+  const slideIdList = presentationRoot && pptxElement(presentationRoot.value, "sldIdLst", PPTX_PRESENTATION_NAMESPACES, presentationRoot.namespaces);
+  if (!presentationRoot || !relationshipRoot || !slideIdList) return null;
+
+  const relationMap = new Map<string, string>();
+  const relationshipIds = new Set<string>();
+  const relations = pptxElements(relationshipRoot.value, "Relationship", new Set([PPTX_PACKAGE_RELATIONSHIP_NAMESPACE]), relationshipRoot.namespaces);
+  if (relations.length !== pptxLocalElementCount(relationshipRoot.value, "Relationship")) return null;
+  for (const relation of relations) {
+    const id = pptxAttribute(relation.value, "Id");
+    const target = pptxAttribute(relation.value, "Target");
+    const type = pptxAttribute(relation.value, "Type");
+    const mode = pptxAttribute(relation.value, "TargetMode");
+    if (!id || !target || !type || relationshipIds.has(id)) return null;
+    relationshipIds.add(id);
+    if (mode && mode !== "Internal") return null;
+    if (!PPTX_SLIDE_RELATIONSHIP_TYPES.has(type)) continue;
+    let decoded: string;
+    try { decoded = decodeURIComponent(target); } catch { return null; }
+    if (decoded !== target || !/^(?:\/ppt\/)?slides\/slide\d+\.xml$/iu.test(decoded)) return null;
+    const name = decoded.startsWith("/") ? decoded.slice(1) : `ppt/${decoded}`;
+    if (!zip.file(name)) return null;
+    relationMap.set(id, name);
+  }
+
+  const ids = pptxElements(slideIdList.value, "sldId", PPTX_PRESENTATION_NAMESPACES, slideIdList.namespaces);
+  if (ids.length !== pptxLocalElementCount(slideIdList.value, "sldId")) return null;
+  if (!ids.length) return null;
+  const usedIds = new Set<string>();
+  const usedNames = new Set<string>();
+  const names: string[] = [];
+  for (const slide of ids) {
+    const id = pptxAttribute(slide.value, "id");
+    const relationId = pptxAttribute(slide.value, "id", PPTX_OFFICE_RELATIONSHIP_NAMESPACES, slide.namespaces);
+    if (!id || typeof relationId !== "string" || usedIds.has(id)) return null;
+    const name = relationMap.get(relationId);
+    if (!name || usedNames.has(name)) return null;
+    usedIds.add(id);
+    usedNames.add(name);
+    const slideXml = await zip.file(name)?.async("string");
+    if (!slideXml || /<!DOCTYPE|<!ENTITY/iu.test(slideXml) || XMLValidator.validate(slideXml) !== true) return null;
+    const slideRoot = pptxElement(xmlParser.parse(slideXml), "sld", PPTX_PRESENTATION_NAMESPACES);
+    if (!slideRoot) return null;
+    const show = pptxAttribute(slideRoot.value, "show");
+    if (show !== "0" && show !== "false") names.push(name);
+  }
+  return names;
+}
+
+type PptxElement = { value: Record<string, unknown>; namespaces: Record<string, string> };
+
+function pptxLocalElementCount(parent: Record<string, unknown>, localName: string): number {
+  return Object.entries(parent).reduce((count, [key, value]) =>
+    count + (!key.startsWith("@_") && xmlLocalName(key) === localName ? asXmlArray(value).length : 0), 0);
+}
+
+function pptxElements(parent: unknown, localName: string, allowedNamespaces: Set<string>, inherited: Record<string, string> = {}): PptxElement[] {
+  if (!parent || typeof parent !== "object" || Array.isArray(parent)) return [];
+  const matches: PptxElement[] = [];
+  for (const [qualifiedName, rawValue] of Object.entries(parent)) {
+    if (qualifiedName.startsWith("@_") || xmlLocalName(qualifiedName) !== localName) continue;
+    for (const value of asXmlArray(rawValue)) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const namespaces = { ...inherited };
+      for (const [key, uri] of Object.entries(value)) {
+        if (typeof uri !== "string") continue;
+        if (key === "@_xmlns") namespaces[""] = uri;
+        else if (key.startsWith("@_xmlns:")) namespaces[key.slice(8)] = uri;
+      }
+      const colon = qualifiedName.indexOf(":");
+      const prefix = colon < 0 ? "" : qualifiedName.slice(0, colon);
+      if (allowedNamespaces.has(namespaces[prefix] || "")) matches.push({ value: value as Record<string, unknown>, namespaces });
+    }
+  }
+  return matches;
+}
+
+function pptxElement(parent: unknown, localName: string, allowedNamespaces: Set<string>, inherited: Record<string, string> = {}): PptxElement | undefined {
+  const matches = pptxElements(parent, localName, allowedNamespaces, inherited);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function pptxAttribute(value: Record<string, unknown>, localName: string, allowedNamespaces?: Set<string>, namespaces: Record<string, string> = {}): string | undefined {
+  for (const [key, raw] of Object.entries(value)) {
+    if (!key.startsWith("@_") || typeof raw !== "string" && typeof raw !== "number") continue;
+    const name = key.slice(2);
+    if (xmlLocalName(name) !== localName) continue;
+    const colon = name.indexOf(":");
+    if (allowedNamespaces ? colon < 0 || !allowedNamespaces.has(namespaces[name.slice(0, colon)] || "") : colon >= 0) continue;
+    return String(raw);
+  }
+  return undefined;
 }
 
 function chunkLineSource(value: string): ChunkDraft[] {

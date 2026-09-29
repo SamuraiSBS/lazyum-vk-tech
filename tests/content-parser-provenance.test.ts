@@ -293,6 +293,116 @@ describe("content parser provenance", () => {
       .toBe(true);
   });
 
+  it("uses visible PPTX order even when slide part numbers are skipped and reordered", async () => {
+    const content = await normalizeContent("Ordered slides", [{
+      name: "ordered.pptx", type: "", buffer: await createSourcePptx(),
+    }]);
+    expect(content.sourceChunks.map(({ locator, precision, text }) => ({ locator, precision, text }))).toEqual([
+      { locator: "slide:1", precision: "exact", text: "Second visible" },
+      { locator: "slide:2", precision: "exact", text: "First visible" },
+    ]);
+    expect(content.documents[0]?.text).toBe("Second visible First visible");
+  });
+
+  it.each([
+    ["missing relationship", '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide7.xml"/>'],
+    ["duplicate relationship", '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide7.xml"/>'],
+    ["external relationship", '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="https://example.com/slide.xml" TargetMode="External"/>'],
+    ["traversal relationship", '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="../slides/slide7.xml"/>'],
+    ["missing slide part", '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide99.xml"/>'],
+  ])("keeps PPTX provenance at document precision for %s", async (_case, relationship) => {
+    const content = await normalizeContent("Unsafe mapping", [{
+      name: "broken.pptx", type: "", buffer: await createSourcePptx({ firstRelationship: relationship }),
+    }]);
+    expect(content.sourceChunks).toHaveLength(2);
+    expect(content.sourceChunks.every((chunk) => chunk.locator === "document" && chunk.precision === "document"))
+      .toBe(true);
+  });
+
+  it("keeps PPTX provenance at document precision for malformed presentation metadata", async () => {
+    const content = await normalizeContent("Malformed mapping", [{
+      name: "broken.pptx", type: "", buffer: await createSourcePptx({ presentation: "<p:presentation><p:sldIdLst>" }),
+    }]);
+    expect(content.sourceChunks.every((chunk) => chunk.locator === "document" && chunk.precision === "document"))
+      .toBe(true);
+  });
+
+  it.each([
+    ["foreign presentation", '<x:presentation xmlns:x="urn:attacker" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><x:sldIdLst><x:sldId id="256" r:id="rId1"/></x:sldIdLst></x:presentation>'],
+    ["rebound slide list", '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst xmlns:p="urn:attacker"><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>'],
+    ["rebound slide id", '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId xmlns:p="urn:attacker" id="256" r:id="rId1"/></p:sldIdLst></p:presentation>'],
+    ["foreign id attribute", '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:x="urn:attacker"><p:sldIdLst><p:sldId id="256" x:id="rId1"/></p:sldIdLst></p:presentation>'],
+    ["rebound relationship prefix", '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="urn:attacker"><p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>'],
+  ])("keeps PPTX provenance at document precision for %s", async (_case, presentation) => {
+    const content = await normalizeContent("Namespace mapping", [{
+      name: "namespace.pptx", type: "", buffer: await createSourcePptx({ presentation }),
+    }]);
+    expect(content.sourceChunks.every((chunk) => chunk.locator === "document" && chunk.precision === "document"))
+      .toBe(true);
+  });
+
+  it("rejects a forged slide relationship type", async () => {
+    const content = await normalizeContent("Forged relationship", [{
+      name: "forged.pptx", type: "", buffer: await createSourcePptx({
+        firstRelationship: '<Relationship Id="rId1" Type="https://attacker.invalid/slide" Target="slides/slide7.xml"/>',
+      }),
+    }]);
+    expect(content.sourceChunks.every((chunk) => chunk.locator === "document" && chunk.precision === "document"))
+      .toBe(true);
+  });
+
+  it.each([
+    ["foreign package root", '<x:Relationships xmlns:x="urn:attacker"><x:Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide7.xml"/><x:Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/></x:Relationships>'],
+    ["rebound relationship element", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship xmlns="urn:attacker" Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide7.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/></Relationships>'],
+  ])("keeps PPTX provenance at document precision for %s", async (_case, relationships) => {
+    const content = await normalizeContent("Package namespace", [{
+      name: "namespace.pptx", type: "", buffer: await createSourcePptx({ relationships }),
+    }]);
+    expect(content.sourceChunks.every((chunk) => chunk.locator === "document" && chunk.precision === "document"))
+      .toBe(true);
+  });
+
+  it("accepts the Strict slide relationship type", async () => {
+    const content = await normalizeContent("Strict relationship", [{
+      name: "strict.pptx", type: "", buffer: await createSourcePptx({
+        firstRelationship: '<Relationship Id="rId1" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/slide" Target="slides/slide7.xml"/>',
+      }),
+    }]);
+    expect(content.sourceChunks.map((chunk) => chunk.locator)).toEqual(["slide:1", "slide:2"]);
+  });
+
+  it("numbers only visible PPTX slides", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("bright"));
+    const firstSlide = await zip.file("ppt/slides/slide1.xml")!.async("string");
+    const hiddenSlide = firstSlide.replace(/<p:sld(?=[\s>])/u, '<p:sld show="0"');
+    expect(hiddenSlide).not.toBe(firstSlide);
+    zip.file("ppt/slides/slide1.xml", hiddenSlide);
+    const content = await normalizeContent("Hidden slide", [{
+      name: "hidden.pptx", type: "", buffer: await zip.generateAsync({ type: "nodebuffer" }),
+    }]);
+    expect(content.sourceChunks).toHaveLength(1);
+    expect(content.sourceChunks[0]).toMatchObject({ locator: "slide:1", precision: "exact" });
+    expect(content.sourceChunks[0]?.text).toContain("Три опорных пункта");
+    expect(content.documents[0]?.text).not.toContain("Пример титульной композиции");
+  });
+
+  it("falls back to document precision for a foreign slide root", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("bright"));
+    const firstSlide = await zip.file("ppt/slides/slide1.xml")!.async("string");
+    const foreignSlide = firstSlide.replace(
+      'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"',
+      'xmlns:p="urn:attacker"',
+    );
+    expect(foreignSlide).not.toBe(firstSlide);
+    zip.file("ppt/slides/slide1.xml", foreignSlide);
+    const content = await normalizeContent("Foreign slide root", [{
+      name: "foreign.pptx", type: "", buffer: await zip.generateAsync({ type: "nodebuffer" }),
+    }]);
+    expect(content.sourceChunks).toHaveLength(2);
+    expect(content.sourceChunks.every((chunk) => chunk.locator === "document" && chunk.precision === "document"))
+      .toBe(true);
+  });
+
   it("locates DOCX body and table paragraphs in document order with stable IDs", async () => {
     const docx = await createDocxFromBody([
       '<w:p><w:r><w:t>Introduction</w:t></w:r></w:p>',
@@ -460,6 +570,15 @@ describe("content parser provenance", () => {
 
 async function createDocx(text: string) {
   return createDocxFromBody(`<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`);
+}
+
+async function createSourcePptx(options: { firstRelationship?: string; presentation?: string; relationships?: string } = {}) {
+  const zip = new JSZip();
+  zip.file("ppt/slides/slide2.xml", '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:t>First visible</a:t></p:sld>');
+  zip.file("ppt/slides/slide7.xml", '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:t>Second visible</a:t></p:sld>');
+  zip.file("ppt/presentation.xml", options.presentation ?? '<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId id="256" r:id="rId1"/><p:sldId id="257" r:id="rId2"/></p:sldIdLst></p:presentation>');
+  zip.file("ppt/_rels/presentation.xml.rels", options.relationships ?? `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${options.firstRelationship ?? '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide7.xml"/>'}<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/></Relationships>`);
+  return zip.generateAsync({ type: "nodebuffer" });
 }
 
 async function createDocxFromBody(body: string) {

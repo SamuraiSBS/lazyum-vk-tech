@@ -158,7 +158,14 @@ test.describe("P0 persisted generation job browser E2E", () => {
     expect(existsSync(fixturePath)).toBeTruthy();
 
     const browser = await chromium.launch({ executablePath: browserExecutable, headless: true });
-    const context = await browser.newContext({ baseURL: "http://localhost:3030", acceptDownloads: true });
+    const context = await browser.newContext({
+      baseURL: "http://localhost:3030",
+      acceptDownloads: true,
+      httpCredentials: {
+        username: process.env.VK_HACKATHON_DEMO_AUTH_USER ?? "playwright",
+        password: process.env.VK_HACKATHON_DEMO_AUTH_PASSWORD ?? "playwright",
+      },
+    });
     const page = await context.newPage();
     await page.setViewportSize({ width: 1440, height: 1000 });
     page.setDefaultTimeout(15_000);
@@ -167,8 +174,8 @@ test.describe("P0 persisted generation job browser E2E", () => {
     try {
       await page.goto("/");
       const briefField = page.getByLabel("Тема / brief");
-      await briefField.fill("Внутренний питч нового сервиса VK для команды продукта");
-      await expect(briefField).toHaveValue("Внутренний питч нового сервиса VK для команды продукта");
+      await briefField.fill("Внутренний питч нового сервиса VK для команды продукта на 7 слайдов");
+      await expect(briefField).toHaveValue("Внутренний питч нового сервиса VK для команды продукта на 7 слайдов");
       await page.getByRole("button", { name: "Продолжить", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Выберите шаблон" })).toBeVisible();
     await page.locator("#template-file").setInputFiles(fixturePath);
@@ -196,7 +203,7 @@ test.describe("P0 persisted generation job browser E2E", () => {
 
     await page.getByRole("button", { name: "Продолжить", exact: true }).click();
     await page.getByRole("button", { name: "Продолжить", exact: true }).click();
-    await page.getByLabel("Количество слайдов").selectOption("5");
+    await page.getByLabel("Количество слайдов").selectOption("10");
     await page.getByRole("button", { name: "Продолжить", exact: true }).click();
     await page.getByRole("button", { name: "Продолжить", exact: true }).click();
 
@@ -207,6 +214,7 @@ test.describe("P0 persisted generation job browser E2E", () => {
       response.url().includes("/api/jobs/") && response.request().method() === "GET"
     ), { timeout: 300_000 }).catch(() => null);
     await expect(page.getByRole("heading", { name: "Всё готово к созданию" })).toBeVisible();
+    await expect(page.getByTestId("effective-slide-count")).toHaveText("7 слайдов (по брифу)");
     const createButton = page.getByRole("button", { name: "Создать презентацию", exact: true });
     await expect(createButton).toBeEnabled();
     await createButton.focus();
@@ -222,7 +230,7 @@ test.describe("P0 persisted generation job browser E2E", () => {
     expect(generationJobId).toMatch(/^job-[A-Za-z0-9-]+$/u);
     const generationSnapshot = await readPublishedSnapshot(page, generationJobId!);
     const generationPayload = generationSnapshot as PublishedSnapshot & { presentations: Record<string, any> };
-    await expect(page.locator(".notice[role='status']")).toContainText("Готово: один job создал три варианта по 5 слайдов.");
+    await expect(page.locator(".notice[role='status']")).toContainText("Готово: один job создал три варианта по 7 слайдов.");
     await expect(page.getByTestId("save-status")).toBeVisible();
     await expect(page.locator("header.topbar").getByTestId("export-control")).toHaveCount(1);
     await expect(page.locator(".editor-toolbar [data-testid='export-control']")).toHaveCount(0);
@@ -268,7 +276,7 @@ test.describe("P0 persisted generation job browser E2E", () => {
     await expect(page.getByRole("tab", { name: /Balanced/u })).toHaveAttribute("aria-selected", "true");
     const slideRail = page.getByRole("complementary", { name: "Список слайдов" });
     const thumbnails = slideRail.locator("button.thumbnail");
-    await expect(thumbnails).toHaveCount(5);
+    await expect(thumbnails).toHaveCount(7);
 
     const firstSlideTitle = await page.locator(".editor-toolbar h2").textContent();
     await thumbnails.nth(1).click();
@@ -531,7 +539,7 @@ test.describe("P0 persisted generation job browser E2E", () => {
     expect(await page.getByTestId("audit-disclosure").evaluate((node) => (node as HTMLDetailsElement).open)).toBe(false);
     await expectPublishedSummary(page, reopenedSnapshot);
     await expect(page.getByRole("tab")).toHaveCount(3);
-    await expect(page.getByRole("complementary", { name: "Список слайдов" })).toContainText("5 слайдов");
+    await expect(page.getByRole("complementary", { name: "Список слайдов" })).toContainText("7 слайдов");
     await expect(page.getByRole("textbox", { name: "Редактируемый текст" }).first()).not.toHaveValue(localDraft);
     await expect(page.locator("body")).not.toContainText(localDraft);
 
@@ -603,7 +611,7 @@ test.describe("P0 persisted generation job browser E2E", () => {
       "Ответ сводки не прошёл проверку и не будет показан.",
     );
     await expect(page.getByRole("tab")).toHaveCount(3);
-    await expect(page.getByRole("complementary", { name: "Список слайдов" })).toContainText("5 слайдов");
+    await expect(page.getByRole("complementary", { name: "Список слайдов" })).toContainText("7 слайдов");
     await expect(page.getByRole("textbox", { name: "Редактируемый текст" }).first()).toBeVisible();
 
     // Seed a separate local draft with an image so the editor image path is
@@ -632,8 +640,8 @@ test.describe("P0 persisted generation job browser E2E", () => {
       baseURL: "http://localhost:3030",
       acceptDownloads: true,
       httpCredentials: {
-        username: process.env.VK_HACKATHON_DEMO_AUTH_USER ?? "",
-        password: process.env.VK_HACKATHON_DEMO_AUTH_PASSWORD ?? "",
+        username: process.env.VK_HACKATHON_DEMO_AUTH_USER ?? "playwright",
+        password: process.env.VK_HACKATHON_DEMO_AUTH_PASSWORD ?? "playwright",
       },
     });
     const imagePage = await imageContext.newPage();

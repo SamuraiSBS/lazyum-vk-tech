@@ -78,11 +78,10 @@ function scoreLayout(
     score += variantProfileScore(variant, profile, slide.content.length > 0, visualTextDemand);
     if (variant === "visual") score += visualCompositionDensityScore(layout, slide, role);
   }
-  const collisionRisk = layoutTextCollisionRisk(layout, slide, variant, role);
+  const collisionRisk = layoutTextCollisionRisk(layout, slide, variant);
   score += collisionRisk <= 0.03
     ? LAYOUT_CLEARANCE_SCORE
     : -LAYOUT_CLEARANCE_SCORE - collisionRisk * LAYOUT_CLEARANCE_SCORE;
-  if (role === "cards" && collisionRisk > 0.4) score -= ROLE_COMPOSITION_SCORE * 2;
   score += rasterBackgroundRoleScore(layout, slide, role);
   if (role === "opening") score += coverArtworkSeparationScore(layout);
   if (role === "cards") score += cardArtworkAlignmentScore(layout) + cardLineInterferenceScore(layout);
@@ -584,7 +583,7 @@ function compareLayoutIds(left: string, right: string) {
  * materialization, so score the best usable geometry in this layout instead
  * of tying the result to a layout name, source slide number, or color.
  */
-function layoutTextCollisionRisk(layout: TemplateLayout, slide: PlanSlide, variant: LayoutVariant, role: NarrativeRole) {
+function layoutTextCollisionRisk(layout: TemplateLayout, slide: PlanSlide, variant: LayoutVariant) {
   const artwork = layout.elements.filter((element) => {
     if (element.type === "image") {
       const relativeArea = (element.w * element.h) / (layout.width * layout.height);
@@ -635,58 +634,7 @@ function layoutTextCollisionRisk(layout: TemplateLayout, slide: PlanSlide, varia
     ? Math.min(...titleSeparated.map((slot) => slotGraphicOverlapRatio(slot, artwork)))
     : slotGraphicOverlapRatio(fallbackBodySlot(layout, titleSlot), artwork);
   const orderRisk = allBodySlots.length > 0 && bodySlots.length === 0 ? 1 : 0;
-  const cardFallbackRisk = role === "cards" && needsFallbackCardRow(layout, slide, textSlots)
-    && !hasSafeFallbackCardRow(layout, slide, titleSlot, artwork)
-    ? 1
-    : 0;
-  return Math.max(titleRisk, bodyRisk, orderRisk, cardFallbackRisk);
-}
-
-function needsFallbackCardRow(
-  layout: TemplateLayout,
-  slide: PlanSlide,
-  textSlots: TemplateLayout["elements"],
-) {
-  if (slide.content.length < 2 || layout.cardCount >= 3 || textSlots.length >= 4) return false;
-  const cardItems = splitSingleCardStatement(slide.content, layout.cardCount);
-  if (layout.cardCount < 2 || cardItems.length < 2 || cardItems.length > layout.cardCount) return true;
-  const titleSlot = textSlots[0];
-  if (!titleSlot) return true;
-  const bodySlots = textSlots.filter((slot) => slot.id !== titleSlot.id
-    && slot.y >= titleSlot.y + titleSlot.h && !overlaps(slot, titleSlot));
-  const maximumWidth = Math.min(layout.width * 0.48, layout.width / Math.max(1, layout.cardCount) * 1.7);
-  const cardSlots = reusableCardTextSlots(layout, bodySlots.filter((slot) => (
-    slot.h >= layout.height * 0.09 && slot.w <= maximumWidth
-  )));
-  return cardSlots.length < cardItems.length
-    || !cardItems.every((item, index) => textFitsSlot(item, cardSlots[index]!));
-}
-
-function hasSafeFallbackCardRow(
-  layout: TemplateLayout,
-  slide: PlanSlide,
-  titleSlot: TemplateLayout["elements"][number],
-  artwork: TemplateLayout["elements"],
-) {
-  const values = slide.content.slice(0, 4);
-  if (!values.length) return true;
-  const gap = Math.max(16, layout.width * 0.02);
-  const cardWidth = (layout.width * 0.82 - gap * (values.length - 1)) / values.length;
-  const cardHeight = layout.height * 0.17;
-  const candidateYs = Array.from({ length: 37 }, (_, index) => (
-    (layout.height - cardHeight) * index / 36
-  )).sort((left, right) => Math.abs(left - layout.height * 0.67) - Math.abs(right - layout.height * 0.67));
-  return candidateYs.some((y) => values.every((_, index) => {
-    const x = layout.width * 0.09 + index * (cardWidth + gap);
-    const card = { x, y, w: cardWidth, h: cardHeight };
-    const text = { x: x + 16, y: y + 15, w: cardWidth - 32, h: layout.height * 0.12 };
-    const overlapsSignificantArtwork = (rect: typeof card) => artwork.some((element) => {
-      const area = intersectionArea(rect, element);
-      return area / Math.min(rect.w * rect.h, element.w * element.h) >= 0.05;
-    });
-    return !overlaps(card, titleSlot) && !overlaps(text, titleSlot)
-      && !overlapsSignificantArtwork(card) && !overlapsSignificantArtwork(text);
-  }));
+  return Math.max(titleRisk, bodyRisk, orderRisk);
 }
 
 /**

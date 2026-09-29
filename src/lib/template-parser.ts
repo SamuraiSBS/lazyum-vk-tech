@@ -50,7 +50,6 @@ type ParsedRelationship = {
   targetFile?: string;
   targetMode?: string;
 };
-type CachedImageData = { dataUrl: string; byteSize: number; sha256: string };
 
 type ThemeTokens = {
   colors: string[];
@@ -109,7 +108,6 @@ export async function parsePptxTemplate(
   const backgroundEvidence: EvidenceRecord<string>[] = [];
   const relationships: RelationshipEvidence[] = [];
   const imageAssets: ImageAssetEvidence[] = [];
-  const imageDataByTarget = new Map<string, Promise<CachedImageData>>();
   const theme = await extractThemeTokens(zip, warnings);
   const presentation = await readXml(zip, "ppt/presentation.xml", warnings);
   const slideSize = extractSlideSize(presentation, warnings);
@@ -130,10 +128,10 @@ export async function parsePptxTemplate(
   }
 
   for (const layout of [...parsedLayouts, ...parsedSlides]) {
-    await hydrateLayoutRelationships(zip, layout, warnings, relationships, imageAssets, imageDataByTarget);
+    await hydrateLayoutRelationships(zip, layout, warnings, relationships, imageAssets);
   }
   for (const master of masters) {
-    await hydrateRelationships(zip, master.sourceFile, master.elements, warnings, imageAssets, imageDataByTarget);
+    await hydrateRelationships(zip, master.sourceFile, master.elements, warnings, imageAssets);
   }
   const mastersByFile = new Map(masters.map((master) => [master.sourceFile, master]));
   const layoutsByFile = new Map(parsedLayouts.map((layout) => [layout.sourceFile, layout]));
@@ -675,11 +673,8 @@ async function hydrateLayoutRelationships(
   warnings: string[],
   relationshipEvidence: RelationshipEvidence[],
   imageAssets: ImageAssetEvidence[],
-  imageDataByTarget: Map<string, Promise<CachedImageData>>,
 ) {
-  const relationships = await hydrateRelationships(
-    zip, layout.sourceFile, layout.elements, warnings, imageAssets, imageDataByTarget,
-  );
+  const relationships = await hydrateRelationships(zip, layout.sourceFile, layout.elements, warnings, imageAssets);
   relationships.forEach((relationship) => {
     const type = relationship.relationshipType;
     if (/slideLayout$/i.test(type)) {
@@ -743,7 +738,6 @@ async function hydrateRelationships(
   elements: TemplateElement[],
   warnings: string[],
   imageAssets: ImageAssetEvidence[],
-  imageDataByTarget: Map<string, Promise<CachedImageData>>,
 ) {
   const relsFile = relationshipFileFor(sourceFile);
   const document = await readXml(zip, relsFile, warnings, true);
@@ -773,24 +767,16 @@ async function hydrateRelationships(
       });
       continue;
     }
-    let cachedImage = imageDataByTarget.get(target);
-    if (!cachedImage) {
-      cachedImage = file.async("nodebuffer").then((bytes) => ({
-        dataUrl: "data:" + mimeFromPackagePath(target) + ";base64," + bytes.toString("base64"),
-        byteSize: bytes.byteLength,
-        sha256: createHash("sha256").update(bytes).digest("hex"),
-      }));
-      imageDataByTarget.set(target, cachedImage);
-    }
-    const image = await cachedImage;
-    element.imageDataUrl = image.dataUrl;
+    const bytes = await file.async("nodebuffer");
+    const data = bytes.toString("base64");
+    element.imageDataUrl = "data:" + mimeFromPackagePath(target) + ";base64," + data;
     imageAssets.push({
       relationshipId: element.relationshipId,
       sourceFile,
       target,
       allowed: true,
-      byteSize: image.byteSize,
-      sha256: image.sha256,
+      byteSize: bytes.byteLength,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
       sources: [source],
     });
   }

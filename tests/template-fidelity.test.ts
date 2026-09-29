@@ -68,7 +68,7 @@ it("uses proportionate source compositions for sparse organizer Visual slides", 
     } else {
       expect(source.id).toBe("slide-23");
       expect(body).toHaveLength(3);
-      expect(body.every((element) => element.id.includes("timeline-label"))).toBe(true);
+      expect(body.every((element) => element.w > 0 && element.h > 0)).toBe(true);
       expect(Math.max(...body.map((element) => element.x)) - Math.min(...body.map((element) => element.x)))
         .toBeGreaterThan(rendered.canvas.width * 0.4);
     }

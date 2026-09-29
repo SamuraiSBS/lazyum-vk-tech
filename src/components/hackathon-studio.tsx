@@ -50,6 +50,7 @@ import {
   travelHistory,
   type VariantHistories,
 } from "@/lib/editor-history";
+import { resolveEffectiveSlideCount } from "@/lib/slide-count";
 import type {
   AuditReport,
   CanvasElement,
@@ -936,6 +937,8 @@ export function HackathonStudio() {
     setSuccess("");
   }
 
+  const effectiveSlideCount = resolveEffectiveSlideCount(brief, slideCount);
+
   return (
     <main className={presentation ? "app-shell" : "app-shell setup-shell"}>
       {presentation && (
@@ -1259,7 +1262,10 @@ export function HackathonStudio() {
                     </div>
                     <div className="wizard-summary-row">
                       <span>Объём</span>
-                      <strong>{slideCount} слайдов</strong>
+                      <strong data-testid="effective-slide-count">
+                        {effectiveSlideCount.count} слайдов
+                        {effectiveSlideCount.source === "brief" ? " (по брифу)" : ""}
+                      </strong>
                     </div>
                     <div className="wizard-summary-row">
                       <span>Открыть вариант</span>

@@ -186,7 +186,7 @@ export function materializeFactBackedChart(
   const legendHeight = legendRowHeight * seriesCount;
   const valueLabelHeight = Math.max(18, Math.min(26, resolvedStyle.fontSize * 1.35));
   const categoryLabelHeight = Math.max(22, Math.min(52, slot.h * 0.18));
-  const valueBandY = slot.y + padding + titleHeight + legendHeight;
+  const valueBandY = slot.y + padding + titleHeight + 4 + legendHeight;
   const plotTop = valueBandY + valueLabelHeight + 4;
   const plotBottom = slot.y + slot.h - padding - categoryLabelHeight;
   const plotHeight = plotBottom - plotTop;
@@ -293,7 +293,7 @@ export function materializeFactBackedChart(
   elements.push(titleBox);
 
   validatedSpec.series.forEach((series, seriesIndex) => {
-    const legendY = slot.y + padding + titleHeight + seriesIndex * legendRowHeight;
+    const legendY = slot.y + padding + titleHeight + 4 + seriesIndex * legendRowHeight;
     const legendColor = seriesColors[seriesIndex % seriesColors.length]!;
     elements.push(chartShape({
       id: `${slot.id}-legend-swatch-${seriesIndex}`,
@@ -602,7 +602,7 @@ function materializeFactBackedLineChart(
   const legendRowHeight = Math.max(18, Math.min(26, resolvedStyle.fontSize * 1.4));
   const legendHeight = legendRowHeight * seriesCount;
   const categoryLabelHeight = Math.max(22, Math.min(52, slot.h * 0.18));
-  const plotTop = slot.y + padding + titleHeight + legendHeight + 8;
+  const plotTop = slot.y + padding + titleHeight + 4 + legendHeight + 8;
   const plotBottom = slot.y + slot.h - padding - categoryLabelHeight;
   const plotHeight = plotBottom - plotTop;
   const plotWidth = slot.w - padding * 2;
@@ -688,7 +688,7 @@ function materializeFactBackedLineChart(
   ));
 
   spec.series.forEach((series, seriesIndex) => {
-    const legendY = slot.y + padding + titleHeight + seriesIndex * legendRowHeight;
+    const legendY = slot.y + padding + titleHeight + 4 + seriesIndex * legendRowHeight;
     const legendColor = seriesColors[seriesIndex % seriesColors.length]!;
     elements.push(chartShape({
       id: `${slot.id}-legend-swatch-${seriesIndex}`,

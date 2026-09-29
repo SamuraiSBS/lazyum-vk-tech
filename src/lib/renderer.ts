@@ -117,7 +117,7 @@ export function renderPresentation(
         slide,
         designSystem,
         dataVisuals.filter(({ spec }) => spec.slideId === slide.id),
-        options.variantGeometry ? variant : undefined,
+        options.variantGeometry !== false ? variant : undefined,
       ),
     };
   });
@@ -369,7 +369,7 @@ function renderSlide(
     ));
   }
   if (usesCardFallback) {
-    elements.push(...fallbackCards(slide.id, slide.content, layout, background, palette, designSystem, artwork, titleSlot));
+    elements.push(...fallbackCards(slide.id, slide.content, layout, background, palette, designSystem, artwork));
   }
   dataVisuals.forEach((input) => {
     if (input.spec.visualType === "table") {
@@ -417,8 +417,19 @@ function renderSlide(
       }
     }
   }
+  // Source panels that enclose text slots represent reusable cards. Do not
+  // leave their outlines behind when this slide uses fewer cards or a
+  // different fallback composition (for example, a timeline).
+  const unusedSourcePanels = new Set(layout.elements
+    .filter((source) => source.type === "shape"
+      && layout.elements.some((slot) => (slot.type === "text" || slot.type === "placeholder")
+        && Boolean(slot.text.trim()) && containsRect(source, slot))
+      && !elements.some((element) => element.type === "text" && Boolean(element.text.trim())
+        && containsRect(source, element)))
+    .map((source) => source.id));
   const visibleElements = elements.filter((element) => element.type === "text" || !element.sourceTemplateElementId
     || (!unusedMarkerIds.has(element.sourceTemplateElementId)
+      && !unusedSourcePanels.has(element.sourceTemplateElementId)
       && !unusedMetricRows.some((row) => containsRect(row, element))));
 
   return {
@@ -683,20 +694,29 @@ function findArtworkClearTextSlot(
     minWidth,
     ].map((width) => Math.max(minWidth, Math.min(maxWidth, width))));
   const maxHeight = Math.min(layout.height * 0.8, layout.height - 12);
-  const heights = uniqueNumbers([
-    slot.h,
-    slot.h * 1.25,
-    slot.h * 1.5,
-    slot.h * 1.8,
-    layout.height * 0.25,
-    layout.height * 0.35,
-    layout.height * 0.5,
-    layout.height * 0.65,
-  ].map((height) => Math.min(maxHeight, Math.max(slot.h, height))));
   let best: TemplateElement | undefined;
   let bestScore = Number.POSITIVE_INFINITY;
 
   for (const width of widths) {
+    // Source boxes may span an illustration even when their actual text needs
+    // only a small strip above it. Search fitting shorter boxes as well.
+    const minimumTextHeight = measureTextForBox(value, 14, width).height / 0.86;
+    const heights = uniqueNumbers([
+      slot.h,
+      minimumTextHeight * 1.12,
+      slot.h * 0.3,
+      slot.h * 0.4,
+      slot.h * 0.5,
+      slot.h * 0.65,
+      slot.h * 0.8,
+      slot.h * 1.25,
+      slot.h * 1.5,
+      slot.h * 1.8,
+      layout.height * 0.25,
+      layout.height * 0.35,
+      layout.height * 0.5,
+      layout.height * 0.65,
+    ].map((height) => Math.min(maxHeight, Math.max(minimumTextHeight, height))));
     for (const height of heights) {
       const candidateBase = { ...slot, w: width, h: height };
       const preferredFontSize = slot.fontSize || fontSizeFor(index, layout);
@@ -904,11 +924,10 @@ function isUsableTextSlot(element: TemplateElement, layout: TemplateLayout) {
 }
 
 /**
- * Apply the bounded variant profile only when the caller explicitly opts in.
- * The public renderer keeps its historical geometry by default; the
- * orchestrator uses this small, deterministic slot adjustment so three
- * materialized documents remain structurally distinguishable even when a
- * sparse template exposes only one reusable layout family.
+ * Apply a bounded variant profile to text slots. A sparse template can expose
+ * only one reusable layout family, so layout selection alone may otherwise
+ * materialize three identical presentations. Callers can opt out for a
+ * comparison against the source geometry.
  */
 function adjustVariantTextSlot(
   element: TemplateElement,
@@ -1212,12 +1231,17 @@ function fallbackCards(
   palette: string[],
   designSystem: DesignSystem,
   artwork: readonly Rect[],
-  titleSlot: Rect,
 ): CanvasElement[] {
   const values = packCardContent(content, 4);
   const gap = Math.max(16, layout.width * 0.02);
   const cardWidth = (layout.width * 0.82 - gap * (values.length - 1)) / values.length;
-  const cardHeight = layout.height * 0.17;
+  // Fallback cards must grow with their actual content. A fixed 17% height
+  // can overflow even at the 14 px minimum used by fitTextFontSize.
+  const cardHeight = Math.max(
+    layout.height * 0.17,
+    ...values.map((value) => measureTextForBox(value, 14, cardWidth - 32).height + 36),
+  );
+  const textHeight = cardHeight - 30;
   const preferredY = layout.height * 0.67;
   const candidateYs = Array.from({ length: 37 }, (_, index) => (
     (layout.height - cardHeight) * index / 36
@@ -1225,9 +1249,8 @@ function fallbackCards(
   const y = candidateYs.find((candidateY) => values.every((_, index) => {
     const x = layout.width * 0.09 + index * (cardWidth + gap);
     const card = { x, y: candidateY, w: cardWidth, h: cardHeight };
-    const text = { x: x + 16, y: candidateY + 15, w: cardWidth - 32, h: layout.height * 0.12 };
-    return !overlapsElement(card, titleSlot) && !overlapsElement(text, titleSlot)
-      && !overlapsArtwork(card, artwork) && !overlapsArtwork(text, artwork);
+    const text = { x: x + 16, y: candidateY + 15, w: cardWidth - 32, h: textHeight };
+    return !overlapsArtwork(card, artwork) && !overlapsArtwork(text, artwork);
   })) ?? preferredY;
   const fill = palette.at(1) || (background === "#FFFFFF" ? "#F2F4F8" : "#FFFFFF");
   return values.flatMap((value, index) => {
@@ -1239,7 +1262,7 @@ function fallbackCards(
       x,
       y,
       w: cardWidth,
-      h: layout.height * 0.17,
+      h: cardHeight,
       shape: "roundRect" as const,
       fill,
       stroke: fill,
@@ -1254,10 +1277,10 @@ function fallbackCards(
       x: x + 16,
       y: y + 15,
       w: cardWidth - 32,
-      h: layout.height * 0.12,
-      text: wrapTextForBox(value, fitTextFontSize(value, 17, cardWidth - 32, layout.height * 0.12), cardWidth - 32),
+      h: textHeight,
+      text: wrapTextForBox(value, fitTextFontSize(value, 17, cardWidth - 32, textHeight), cardWidth - 32),
       fontFamily: resolveTextFont("body", designSystem),
-      fontSize: fitTextFontSize(value, 17, cardWidth - 32, layout.height * 0.12),
+      fontSize: fitTextFontSize(value, 17, cardWidth - 32, textHeight),
       fontWeight: 600,
       color: readableTextColor(fill, palette),
       align: "left" as const,
