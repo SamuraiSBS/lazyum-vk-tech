@@ -33,6 +33,29 @@ async function appendShape(zip: JSZip, file: string, shape: string) {
   });
 }
 
+function artworkShape(id: number, color: string) {
+  return '<p:sp><p:nvSpPr><p:cNvPr id="' + id + '" name="Artwork ' + id +
+    '"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="952500" y="952500"/>' +
+    '<a:ext cx="952500" cy="952500"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/>' +
+    '</a:prstGeom><a:solidFill><a:srgbClr val="' + color +
+    '"/></a:solidFill></p:spPr></p:sp>';
+}
+
+async function setShowMasterShapes(zip: JSZip, file: string, value: string) {
+  const root = file.includes("/slides/") ? "p:sld" : "p:sldLayout";
+  await mutatePart(zip, file, (xml) => {
+    const expression = new RegExp("<" + root + "\\b");
+    if (!expression.test(xml)) throw new Error("Fixture root is missing: " + file);
+    return xml.replace(expression, "<" + root + ' showMasterSp="' + value + '"');
+  });
+}
+
+function addPictureCrop(picture: string, rect: string) {
+  const withCrop = picture.replace(/<a:blip\b[^>]*(?:\/>|>[\s\S]*?<\/a:blip>)/u, (blip) => blip + rect);
+  if (withCrop === picture) throw new Error("Fixture picture has no a:blip");
+  return withCrop;
+}
+
 function placeholderShape(options: {
   id: number;
   name: string;
@@ -91,6 +114,133 @@ function layoutFor(design: Awaited<ReturnType<typeof parsePptxTemplate>>, source
 }
 
 describe("Template Parser", () => {
+  it("keeps interleaved shape and picture XML order", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("photo"));
+    const slideXml = await zip.file(slide1File)!.async("string");
+    const picture = slideXml.match(/<p:pic\b[\s\S]*?<\/p:pic>/u)?.[0];
+    if (!picture) throw new Error("Photo fixture has no picture");
+    const orderedPicture = picture.replace(/<p:cNvPr\b[^>]*\bid="\d+"/u,
+      (node) => node.replace(/\bid="\d+"/u, 'id="978"'));
+    const shape = (id: number) => artworkShape(id, "123456");
+    await appendShape(zip, slide1File, shape(976) + orderedPicture + shape(977));
+    const elements = layoutFor(await parsedFromZip(zip, "interleaved.pptx"), slide1File).elements;
+    expect(["976", "978", "977"].map((id) => elements.find((element) => element.id === id)!.zIndex))
+      .toEqual([elements.length - 3, elements.length - 2, elements.length - 1]);
+  });
+
+  it("maps nested group children with translation and unequal scales while retaining provenance", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("photo"));
+    const original = await zip.file(slide1File)!.async("string");
+    const picture = original.match(/<p:pic\b[\s\S]*?<\/p:pic>/u)?.[0];
+    if (!picture) throw new Error("Photo fixture has no picture");
+    const emu = (pixels: number) => pixels * 9525;
+    const group = (id: number, off: [number, number], ext: [number, number], childOff: [number, number], childExt: [number, number], children: string, extra = "") =>
+      `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${id}" name="Group ${id}"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>` +
+      `<p:grpSpPr><a:xfrm${extra}><a:off x="${emu(off[0])}" y="${emu(off[1])}"/>` +
+      `<a:ext cx="${emu(ext[0])}" cy="${emu(ext[1])}"/>` +
+      `<a:chOff x="${emu(childOff[0])}" y="${emu(childOff[1])}"/>` +
+      `<a:chExt cx="${emu(childExt[0])}" cy="${emu(childExt[1])}"/></a:xfrm></p:grpSpPr>${children}</p:grpSp>`;
+    const shape = `<p:sp><p:nvSpPr><p:cNvPr id="981" name="Nested text"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>` +
+      `<p:spPr><a:xfrm><a:off x="${emu(10)}" y="${emu(15)}"/><a:ext cx="${emu(20)}" cy="${emu(10)}"/></a:xfrm></p:spPr>` +
+      `<p:txBody><a:p><a:r><a:t>Nested text</a:t></a:r></a:p></p:txBody></p:sp>`;
+    const line = `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="982" name="Nested line"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>` +
+      `<p:spPr><a:xfrm><a:off x="${emu(30)}" y="${emu(30)}"/><a:ext cx="${emu(15)}" cy="${emu(10)}"/></a:xfrm></p:spPr></p:cxnSp>`;
+    const nestedPicture = addPictureCrop(picture
+      .replace(/<p:cNvPr\b[^>]*\bid="\d+"/u, (node) => node.replace(/\bid="\d+"/u, 'id="983"'))
+      .replace(/<a:off\b[^>]*\/>/u, `<a:off x="${emu(25)}" y="${emu(20)}"/>`)
+      .replace(/<a:ext\b[^>]*\/>/u, `<a:ext cx="${emu(10)}" cy="${emu(5)}"/>`), '<a:srcRect l="10000"/>');
+    const inner = group(980, [30, 40], [100, 60], [5, 10], [50, 20], shape + line + nestedPicture);
+    await appendShape(zip, slide1File, group(979, [100, 200], [400, 200], [10, 20], [200, 100], inner));
+    const design = await parsedFromZip(zip, "nested-groups.pptx");
+    const elements = layoutFor(design, slide1File).elements;
+    const expected = [
+      ["981", "text", 160, 270, 80, 60],
+      ["982", "line", 240, 360, 60, 60],
+      ["983", "image", 220, 300, 40, 30],
+    ] as const;
+    for (const [id, type, x, y, w, h] of expected) {
+      expect(elements.find((element) => element.id === id)).toMatchObject({ id, type, x, y, w, h, sourceFile: slide1File });
+    }
+    expect(elements.find((element) => element.id === "983")).toMatchObject({
+      crop: { left: 10, top: 0, right: 0, bottom: 0 },
+      relationshipId: expect.any(String),
+      imageDataUrl: expect.stringMatching(/^data:image\//u),
+    });
+    expect(expected.map(([id]) => elements.find((element) => element.id === id)!.zIndex))
+      .toEqual([...expected.map(([id]) => elements.find((element) => element.id === id)!.zIndex)].sort((a, b) => a - b));
+  });
+
+  it("does not fabricate child positions for missing, degenerate, or rotated group transforms", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("bright"));
+    const child = (id: number) => `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="Unsafe"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>` +
+      '<p:spPr><a:xfrm><a:off x="95250" y="95250"/><a:ext cx="95250" cy="95250"/></a:xfrm></p:spPr></p:sp>';
+    const group = (id: number, transform: string, content: string) =>
+      `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${id}" name="Unsafe group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>` +
+      `<p:grpSpPr>${transform}</p:grpSpPr>${content}</p:grpSp>`;
+    const valid = '<a:off x="0" y="0"/><a:ext cx="952500" cy="952500"/><a:chOff x="0" y="0"/><a:chExt cx="952500" cy="952500"/>';
+    await appendShape(zip, slide1File, group(990, '<a:xfrm><a:off x="0" y="0"/></a:xfrm>', child(991)) +
+      group(992, `<a:xfrm>${valid.replace('cx="952500" cy="952500"/>', 'cx="0" cy="952500"/>')}</a:xfrm>`, child(993)) +
+      group(994, `<a:xfrm rot="5400000">${valid}</a:xfrm>`, child(995)));
+    const design = await parsedFromZip(zip, "unsupported-groups.pptx");
+    const elements = layoutFor(design, slide1File).elements;
+    for (const id of ["991", "993", "995"]) expect(elements.some((element) => element.id === id)).toBe(false);
+    expect(design.warnings.some((warning) => warning.includes("elementId=990") && warning.includes("degenerate"))).toBe(true);
+    expect(design.warnings.some((warning) => warning.includes("elementId=992") && warning.includes("degenerate"))).toBe(true);
+    expect(design.warnings.some((warning) => warning.includes("elementId=994") && warning.includes("rotation/flip"))).toBe(true);
+  });
+
+  it("keeps image srcRect on each OOXML placement with its source identity", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("photo"));
+    const slideXml = await zip.file(slide1File)!.async("string");
+    const picture = slideXml.match(/<p:pic\b[\s\S]*?<\/p:pic>/u)?.[0];
+    if (!picture) throw new Error("Photo fixture has no p:pic");
+    for (const [file, id, rect] of [
+      [slide1File, "970", '<a:srcRect l="25125" t="0" r="15000" b="5000"/>'],
+      [layout1File, "971", '<a:srcRect l="-10000" t="5000" r="30000" b="0"/>'],
+      [master1File, "972", '<a:srcRect l="1000" t="2000" r="3000" b="4000"/>'],
+    ] as const) {
+      const placement = addPictureCrop(picture
+        .replace(/<p:cNvPr\b[^>]*\bid="\d+"/u, (node) => node.replace(/\bid="\d+"/u, `id="${id}"`)), rect);
+      await appendShape(zip, file, placement);
+    }
+    const design = await parsedFromZip(zip, "image-crop-provenance.pptx");
+    const expected = [
+      [slide1File, "970", { left: 25.125, top: 0, right: 15, bottom: 5 }],
+      [layout1File, "971", { left: -10, top: 5, right: 30, bottom: 0 }],
+      [master1File, "972", { left: 1, top: 2, right: 3, bottom: 4 }],
+    ] as const;
+    for (const [sourceFile, id, crop] of expected) {
+      expect(design.layouts.flatMap((layout) => layout.elements)
+        .some((element) => element.sourceFile === sourceFile && element.id.endsWith(id) &&
+          JSON.stringify(element.crop) === JSON.stringify(crop)), `${sourceFile}:${id}`).toBe(true);
+    }
+    expect(design.layouts.flatMap((layout) => layout.elements)
+      .some((element) => element.sourceFile === slide1File && element.type === "image" && !element.crop)).toBe(true);
+  });
+
+  it("ignores malformed and out-of-contract srcRect without losing its image", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("photo"));
+    const xml = await zip.file(slide1File)!.async("string");
+    const picture = xml.match(/<p:pic\b[\s\S]*?<\/p:pic>/u)?.[0];
+    if (!picture) throw new Error("Photo fixture has no p:pic");
+    for (const [id, rect] of [
+      ["973", '<a:srcRect l="garbage"/>'],
+      ["974", '<a:srcRect l="50000" r="50000"/>'],
+      ["975", '<a:srcRect l="101000"/>'],
+    ] as const) {
+      await appendShape(zip, slide1File, addPictureCrop(picture
+        .replace(/<p:cNvPr\b[^>]*\bid="\d+"/u, (node) => node.replace(/\bid="\d+"/u, `id="${id}"`)), rect));
+    }
+    const design = await parsedFromZip(zip, "invalid-crop.pptx");
+    for (const id of ["973", "974", "975"]) {
+      const image = design.layouts.flatMap((layout) => layout.elements)
+        .find((element) => element.sourceFile === slide1File && element.id === id);
+      expect(image?.type).toBe("image");
+      expect(image).not.toHaveProperty("crop");
+      expect(image?.imageDataUrl).toMatch(/^data:image\//u);
+    }
+  });
+
   it.each(["bright", "dark", "photo", "portrait"] as const)("extracts a design system from the %s fixture", async (theme) => {
     const design = await parsePptxTemplate(await createFixtureTemplate(theme), theme + ".pptx");
 
@@ -101,6 +251,50 @@ describe("Template Parser", () => {
     expect(design.layouts.length).toBeGreaterThan(0);
     expect(design.layouts.some((layout) => layout.elements.length > 0)).toBe(true);
     expect(design.visualPatterns.length).toBeGreaterThan(0);
+  });
+
+  it("scores retained layouts deterministically and keeps global diagnostics separate", async () => {
+    const bytes = await createFixtureTemplate("bright");
+    const first = await parsePptxTemplate(bytes, "ordinary.pptx");
+    const second = await parsePptxTemplate(bytes, "ordinary.pptx");
+    expect(first.layouts.map((layout) => [layout.sourceFile, layout.confidence, layout.parserWarnings]))
+      .toEqual(second.layouts.map((layout) => [layout.sourceFile, layout.confidence, layout.parserWarnings]));
+    expect(first.layouts.every((layout) => typeof layout.confidence === "number" && layout.confidence >= 0 && layout.confidence <= 1)).toBe(true);
+    const legacy = structuredClone(first);
+    legacy.layouts.forEach((layout) => { delete layout.confidence; delete layout.parserWarnings; });
+    expect(designSystemSchema.safeParse(legacy).success).toBe(true);
+  });
+
+  it("attaches inherited background warnings to dependent layouts and scores fallback lower", async () => {
+    const inheritedZip = await JSZip.loadAsync(await createFixtureTemplate("bright"));
+    await setBackground(inheritedZip, slide1File);
+    await setBackground(inheritedZip, slide2File);
+    await setBackground(inheritedZip, layout1File);
+    await setBackground(inheritedZip, master1File, "654321");
+    const inherited = await parsedFromZip(inheritedZip, "inherited.pptx");
+    const fallbackZip = await JSZip.loadAsync(await createFixtureTemplate("bright"));
+    await setBackground(fallbackZip, slide1File);
+    await setBackground(fallbackZip, slide2File);
+    await setBackground(fallbackZip, layout1File);
+    await setBackground(fallbackZip, master1File);
+    const fallback = await parsedFromZip(fallbackZip, "fallback.pptx");
+    const slide = layoutFor(fallback, slide1File);
+    expect(slide.parserWarnings?.some((warning) => warning.includes("Fallback background used for " + layout1File))).toBe(true);
+    expect(slide.confidence!).toBeLessThan(layoutFor(inherited, slide1File).confidence!);
+  });
+
+  it("assigns malformed relationship warnings only to their affected source", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("bright"));
+    const relationshipFile = "ppt/slides/_rels/slide1.xml.rels";
+    await mutatePart(zip, relationshipFile, (xml) => xml.replace(
+      /Target="\.\.\/slideLayouts\/slideLayout\d+\.xml"/,
+      'Target="../slideLayouts/missing-layout.xml"',
+    ));
+    const design = await parsedFromZip(zip, "broken.pptx");
+    expect(layoutFor(design, slide1File).parserWarnings?.some((warning) => warning.includes("missing-layout.xml"))).toBe(true);
+    expect(layoutFor(design, slide2File).parserWarnings?.some((warning) => warning.includes("missing-layout.xml"))).toBe(false);
+    const intact = await parsePptxTemplate(await createFixtureTemplate("bright"), "intact.pptx");
+    expect(layoutFor(design, slide1File).confidence!).toBeLessThan(layoutFor(intact, slide1File).confidence!);
   });
 
   it("keeps template image bytes for photo-led templates", async () => {
@@ -359,6 +553,91 @@ describe("Template Parser", () => {
       warning.includes("sourceFile=" + slide1File) && warning.includes("relationshipId=") && warning.includes("missing-layout.xml"),
     )).toBe(true);
     expect(design.evidence?.backgrounds.some((entry) => entry.value === "#123456" && entry.sources.some((source) => source.sourceFile === slide1File))).toBe(false);
+  });
+
+  it("inherits related master and layout artwork when showMasterSp is enabled", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("bright"));
+    await appendShape(zip, master1File, artworkShape(9801, "111111"));
+    await appendShape(zip, layout1File, artworkShape(9802, "222222"));
+    await setShowMasterShapes(zip, layout1File, "1");
+    await setShowMasterShapes(zip, slide1File, "true");
+
+    const design = await parsedFromZip(zip, "enabled-master-artwork.pptx");
+    const slide = layoutFor(design, slide1File);
+    expect(slide.elements.find((element) => element.sourceFile === master1File && element.name === "Artwork 9801")?.fill)
+      .toBe("#111111");
+    expect(slide.elements.find((element) => element.sourceFile === layout1File && element.name === "Artwork 9802")?.fill)
+      .toBe("#222222");
+  });
+
+  it("hides master artwork on a layout but keeps layout artwork and placeholder style inheritance", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("bright"));
+    await appendShape(zip, master1File, artworkShape(9811, "111111"));
+    await appendShape(zip, master1File, placeholderShape({
+      id: 9812, name: "Master indexed slot", index: 71,
+      geometry: { x: 952500, y: 1905000, cx: 2857500, cy: 476250 },
+      fontFamily: "Master Hidden Artwork Font", text: "MASTER TEXT",
+    }));
+    await appendShape(zip, layout1File, artworkShape(9813, "222222"));
+    await appendShape(zip, slide1File, placeholderShape({
+      id: 9814, name: "Slide indexed slot", index: 71, text: "SLIDE TEXT",
+    }));
+    await setShowMasterShapes(zip, layout1File, "false");
+
+    const design = await parsedFromZip(zip, "layout-hides-master-artwork.pptx");
+    const slide = layoutFor(design, slide1File);
+    expect(slide.elements.some((element) => element.name === "Artwork 9811")).toBe(false);
+    expect(slide.elements.some((element) => element.name === "Artwork 9813")).toBe(true);
+    expect(slide.elements.find((element) => element.id === "9814")).toMatchObject({
+      fontFamily: "Master Hidden Artwork Font", text: "SLIDE TEXT", x: 100, y: 200,
+    });
+    expect(slide.elements.filter((element) => element.name === "Master indexed slot")).toHaveLength(0);
+  });
+
+  it("hides master artwork on one slide without hiding layout artwork or another slide's master artwork", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("bright"));
+    await appendShape(zip, master1File, artworkShape(9821, "111111"));
+    await appendShape(zip, layout1File, artworkShape(9822, "222222"));
+    await setShowMasterShapes(zip, slide1File, "0");
+
+    const design = await parsedFromZip(zip, "slide-hides-master-artwork.pptx");
+    const hiddenSlide = layoutFor(design, slide1File);
+    expect(hiddenSlide.elements.some((element) => element.name === "Artwork 9821")).toBe(false);
+    expect(hiddenSlide.elements.some((element) => element.name === "Artwork 9822")).toBe(true);
+    expect(layoutFor(design, slide2File).elements.some((element) => element.name === "Artwork 9821")).toBe(true);
+  });
+
+  it("does not attach master artwork without a valid layout-master relationship", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("bright"));
+    await appendShape(zip, master1File, artworkShape(9831, "111111"));
+    await mutatePart(zip, "ppt/slideLayouts/_rels/slideLayout1.xml.rels", (xml) =>
+      xml.replace(/Target="\.\.\/slideMasters\/slideMaster\d+\.xml"/,
+        'Target="../slideMasters/missing-master.xml"'));
+
+    const design = await parsedFromZip(zip, "missing-master-artwork.pptx");
+    expect(layoutFor(design, slide1File).elements.some((element) => element.name === "Artwork 9831")).toBe(false);
+    expect(design.warnings.some((warning) => warning.includes("missing-master.xml"))).toBe(true);
+  });
+
+  it("keeps distinct indexed placeholders when an unindexed slide placeholder is present", async () => {
+    const zip = await JSZip.loadAsync(await createFixtureTemplate("bright"));
+    await appendShape(zip, master1File, placeholderShape({
+      id: 9841, name: "Master slot 72", index: 72,
+      geometry: { x: 952500, y: 1905000, cx: 2857500, cy: 476250 },
+      text: "MASTER 72",
+    }));
+    const unindexed = placeholderShape({
+      id: 9842, name: "Slide unindexed slot", index: 0,
+      geometry: { x: 1905000, y: 1905000, cx: 2857500, cy: 476250 },
+      text: "SLIDE 0",
+    }).replace(' idx="0"', "");
+    await appendShape(zip, slide1File, unindexed);
+
+    const slide = layoutFor(await parsedFromZip(zip, "distinct-indexed-placeholders.pptx"), slide1File);
+    expect(slide.elements.filter((element) => element.type === "placeholder" &&
+      (element.id === "9842" || element.name === "Master slot 72"))).toHaveLength(2);
+    expect(slide.elements.find((element) => element.id === "9842")?.text).toBe("SLIDE 0");
+    expect(slide.elements.find((element) => element.name === "Master slot 72")?.text).toBe("MASTER 72");
   });
 
   it("records deterministic token evidence, real relationship chains and inherited sources", async () => {

@@ -31,13 +31,14 @@ function renderElement(element: CanvasElement) {
     return `<div class="element element-text" ${attributes} style="${style}">${escapeHtml(element.text).replace(/\n/g, "<br>")}</div>`;
   }
   if (element.type === "image") {
-    const style = elementStyle(element) + "object-fit:fill;";
+    const rotationStyle = element.rotation ? `transform:rotate(${element.rotation}deg);` : "";
+    const style = elementStyle(element) + "object-fit:fill;" + rotationStyle;
     if (element.dataUrl && /^data:image\/[a-z0-9.+-]+(?:;[^,]*)?,/iu.test(element.dataUrl)) {
       if (element.crop) {
         const horizontal = 100 - element.crop.left - element.crop.right;
         const vertical = 100 - element.crop.top - element.crop.bottom;
         const imageStyle = `position:absolute;display:block;max-width:none;width:${px(element.w * 100 / horizontal)};height:${px(element.h * 100 / vertical)};left:${px(-element.w * element.crop.left / horizontal)};top:${px(-element.h * element.crop.top / vertical)};`;
-        return `<div class="element element-image-crop" ${attributes} style="${elementStyle(element)}overflow:hidden;"><img class="element-image" src="${escapeAttribute(element.dataUrl)}" alt="${escapeAttribute(element.alt)}" draggable="false" style="${imageStyle}"></div>`;
+        return `<div class="element element-image-crop" ${attributes} style="${elementStyle(element)}overflow:hidden;${rotationStyle}"><img class="element-image" src="${escapeAttribute(element.dataUrl)}" alt="${escapeAttribute(element.alt)}" draggable="false" style="${imageStyle}"></div>`;
       }
       return `<img class="element element-image" ${attributes} src="${escapeAttribute(element.dataUrl)}" alt="${escapeAttribute(element.alt)}" draggable="false" style="${style}">`;
     }

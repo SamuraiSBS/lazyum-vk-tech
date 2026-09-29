@@ -78,15 +78,16 @@ describe("POST /api/export/pdf and /api/export/html", () => {
     const text = document.slides[0].canvas.elements.find((element) => element.type === "text");
     if (!text || text.type !== "text") throw new Error("Fixture does not contain a text element");
     text.text = "<x>&\"'";
+    const imageDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     document.slides[0].canvas.elements.push({
       id: "inline-data-image",
       type: "image",
-      x: 20,
-      y: 20,
+      x: document.slides[0].canvas.width - 48,
+      y: document.slides[0].canvas.height - 40,
       w: 32,
       h: 24,
       alt: "<image>",
-      dataUrl: "data:image/png;base64,AAAA",
+      dataUrl: imageDataUrl,
       zIndex: 999,
       locked: false,
     });
@@ -94,7 +95,7 @@ describe("POST /api/export/pdf and /api/export/html", () => {
     const response = await postHtml(createRequest(document));
     const html = await response.text();
 
-    expect(response.status).toBe(200);
+    expect(response.status, html.slice(0, 2000)).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(response.headers.get("content-length")).toBe(String(Buffer.byteLength(html)));
     expect(response.headers.get("content-disposition")).toBe(
@@ -106,7 +107,7 @@ describe("POST /api/export/pdf and /api/export/html", () => {
     expect(html).toContain(`data-slide-height="${document.slides[0].canvas.height}"`);
     expect(html).toContain("&lt;x&gt;&amp;&quot;&#39;");
     expect(html).not.toContain("<x>&\"'");
-    expect(html).toContain("data:image/png;base64,AAAA");
+    expect(html).toContain(imageDataUrl);
     expect(html).toContain("element-shape");
     expect(html).toContain("element-image");
     expect(html).not.toContain("<script");

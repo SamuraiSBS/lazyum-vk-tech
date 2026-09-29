@@ -67,6 +67,7 @@ function scoreLayout(
   if (slide.visualIntent === "cards" && layout.cardCount >= Math.min(3, slide.content.length)) score += 58;
   if (slide.visualIntent === "timeline" && layout.composition === "timeline") score += 58;
   if ((slide.visualIntent === "image" || slide.visualIntent === "diagram") && profile.usableVisualSlots > 0) score += 42;
+  if (slide.visualIntent === "image") score += featuredImageScore(layout);
   if (slide.content.length <= Math.max(1, profile.usableTextSlots + layout.cardCount)) score += 22;
   if (profile.inCanvasElementCount > 1) score += 6;
   score += roleTextCapacityScore(layout, slide, role);
@@ -75,11 +76,13 @@ function scoreLayout(
       ? visualTextDemandScore(layout, slide)
       : 0;
     score += variantProfileScore(variant, profile, slide.content.length > 0, visualTextDemand);
+    if (variant === "visual") score += visualCompositionDensityScore(layout, slide, role);
   }
-  const collisionRisk = layoutTextCollisionRisk(layout, slide, variant);
-  score += collisionRisk === 0
+  const collisionRisk = layoutTextCollisionRisk(layout, slide, variant, role);
+  score += collisionRisk <= 0.03
     ? LAYOUT_CLEARANCE_SCORE
     : -LAYOUT_CLEARANCE_SCORE - collisionRisk * LAYOUT_CLEARANCE_SCORE;
+  if (role === "cards" && collisionRisk > 0.4) score -= ROLE_COMPOSITION_SCORE * 2;
   score += rasterBackgroundRoleScore(layout, slide, role);
   if (role === "opening") score += coverArtworkSeparationScore(layout);
   if (role === "cards") score += cardArtworkAlignmentScore(layout) + cardLineInterferenceScore(layout);
@@ -88,6 +91,48 @@ function scoreLayout(
     score -= ROLE_COMPOSITION_SCORE * 4;
   }
   return score;
+}
+
+function visualCompositionDensityScore(layout: TemplateLayout, slide: PlanSlide, role: NarrativeRole) {
+  if (role === "cards") {
+    const itemCount = splitSingleCardStatement(slide.content, Math.max(2, layout.cardCount)).length;
+    // A short message leaves a large source card grid visibly unfilled. Prefer
+    // a source composition whose repeated anchors match the actual message.
+    if (itemCount >= 2 && layout.cardCount < 2) return -10_000;
+    return itemCount > 0 ? -Math.max(0, layout.cardCount - itemCount) * 3_500 : 0;
+  }
+  if (role !== "timeline" || layout.composition !== "timeline" || slide.content.length < 2) return 0;
+  const slots = layout.elements.filter((element) => isRenderableTextSlot(element, layout))
+    .sort((left, right) => (right.fontSize || 0) - (left.fontSize || 0) || left.y - right.y || left.x - right.x);
+  const title = slots[0];
+  if (!title) return -ROLE_COMPOSITION_SCORE * 2;
+  const labels = slots.filter((slot) => slot.id !== title.id
+    && slot.y >= title.y + title.h
+    && !overlaps(slot, title)
+    && slot.w <= layout.width * 0.4
+    && slot.h >= layout.height * 0.07
+    && (slot.fontSize || 0) <= 32);
+  const fittingCenters = slide.content.flatMap((item) => labels
+    .filter((slot) => textFitsSlot(item, slot))
+    .map((slot) => (slot.x + slot.w / 2) / layout.width));
+  const separatedCenters = fittingCenters.sort((left, right) => left - right)
+    .filter((center, index, centers) => index === 0 || center - centers[index - 1]! >= 0.12);
+  if (separatedCenters.length < Math.min(3, slide.content.length)) return -ROLE_COMPOSITION_SCORE * 2;
+  // A source timeline with many more labeled steps than the plan will retain
+  // its unfilled connectors. A simpler source page lets the fallback timeline
+  // express exactly the planned steps without inventing content.
+  return -Math.max(0, labels.length - slide.content.length) * 9_000;
+}
+
+function featuredImageScore(layout: TemplateLayout) {
+  const canvasArea = layout.width * layout.height;
+  if (canvasArea <= 0) return 0;
+  const largestImageArea = layout.elements
+    .filter((element) => element.type === "image" && element.imageDataUrl
+      && element.x >= 0 && element.y >= 0
+      && element.x + element.w <= layout.width && element.y + element.h <= layout.height)
+    .reduce((largest, element) => Math.max(largest, element.w * element.h), 0);
+  return Math.min(0.7, largestImageArea / canvasArea) * 500;
 }
 
 function coverArtworkSeparationScore(layout: TemplateLayout) {
@@ -539,7 +584,7 @@ function compareLayoutIds(left: string, right: string) {
  * materialization, so score the best usable geometry in this layout instead
  * of tying the result to a layout name, source slide number, or color.
  */
-function layoutTextCollisionRisk(layout: TemplateLayout, slide: PlanSlide, variant: LayoutVariant) {
+function layoutTextCollisionRisk(layout: TemplateLayout, slide: PlanSlide, variant: LayoutVariant, role: NarrativeRole) {
   const artwork = layout.elements.filter((element) => {
     if (element.type === "image") {
       const relativeArea = (element.w * element.h) / (layout.width * layout.height);
@@ -590,7 +635,58 @@ function layoutTextCollisionRisk(layout: TemplateLayout, slide: PlanSlide, varia
     ? Math.min(...titleSeparated.map((slot) => slotGraphicOverlapRatio(slot, artwork)))
     : slotGraphicOverlapRatio(fallbackBodySlot(layout, titleSlot), artwork);
   const orderRisk = allBodySlots.length > 0 && bodySlots.length === 0 ? 1 : 0;
-  return Math.max(titleRisk, bodyRisk, orderRisk);
+  const cardFallbackRisk = role === "cards" && needsFallbackCardRow(layout, slide, textSlots)
+    && !hasSafeFallbackCardRow(layout, slide, titleSlot, artwork)
+    ? 1
+    : 0;
+  return Math.max(titleRisk, bodyRisk, orderRisk, cardFallbackRisk);
+}
+
+function needsFallbackCardRow(
+  layout: TemplateLayout,
+  slide: PlanSlide,
+  textSlots: TemplateLayout["elements"],
+) {
+  if (slide.content.length < 2 || layout.cardCount >= 3 || textSlots.length >= 4) return false;
+  const cardItems = splitSingleCardStatement(slide.content, layout.cardCount);
+  if (layout.cardCount < 2 || cardItems.length < 2 || cardItems.length > layout.cardCount) return true;
+  const titleSlot = textSlots[0];
+  if (!titleSlot) return true;
+  const bodySlots = textSlots.filter((slot) => slot.id !== titleSlot.id
+    && slot.y >= titleSlot.y + titleSlot.h && !overlaps(slot, titleSlot));
+  const maximumWidth = Math.min(layout.width * 0.48, layout.width / Math.max(1, layout.cardCount) * 1.7);
+  const cardSlots = reusableCardTextSlots(layout, bodySlots.filter((slot) => (
+    slot.h >= layout.height * 0.09 && slot.w <= maximumWidth
+  )));
+  return cardSlots.length < cardItems.length
+    || !cardItems.every((item, index) => textFitsSlot(item, cardSlots[index]!));
+}
+
+function hasSafeFallbackCardRow(
+  layout: TemplateLayout,
+  slide: PlanSlide,
+  titleSlot: TemplateLayout["elements"][number],
+  artwork: TemplateLayout["elements"],
+) {
+  const values = slide.content.slice(0, 4);
+  if (!values.length) return true;
+  const gap = Math.max(16, layout.width * 0.02);
+  const cardWidth = (layout.width * 0.82 - gap * (values.length - 1)) / values.length;
+  const cardHeight = layout.height * 0.17;
+  const candidateYs = Array.from({ length: 37 }, (_, index) => (
+    (layout.height - cardHeight) * index / 36
+  )).sort((left, right) => Math.abs(left - layout.height * 0.67) - Math.abs(right - layout.height * 0.67));
+  return candidateYs.some((y) => values.every((_, index) => {
+    const x = layout.width * 0.09 + index * (cardWidth + gap);
+    const card = { x, y, w: cardWidth, h: cardHeight };
+    const text = { x: x + 16, y: y + 15, w: cardWidth - 32, h: layout.height * 0.12 };
+    const overlapsSignificantArtwork = (rect: typeof card) => artwork.some((element) => {
+      const area = intersectionArea(rect, element);
+      return area / Math.min(rect.w * rect.h, element.w * element.h) >= 0.05;
+    });
+    return !overlaps(card, titleSlot) && !overlaps(text, titleSlot)
+      && !overlapsSignificantArtwork(card) && !overlapsSignificantArtwork(text);
+  }));
 }
 
 /**
@@ -734,8 +830,37 @@ function slotGraphicOverlapRatio(
 ) {
   const slotArea = slot.w * slot.h;
   if (slotArea <= 0) return 1;
-  const overlapArea = artwork.reduce((total, element) => total + intersectionArea(slot, element), 0);
+  const overlapArea = artwork.reduce((total, element) => total + (element.type === "line"
+    ? lineIntersectionArea(slot, element)
+    : intersectionArea(slot, element)), 0);
   return Math.min(1, overlapArea / slotArea);
+}
+
+function lineIntersectionArea(
+  slot: Pick<TemplateLayout["elements"][number], "x" | "y" | "w" | "h">,
+  line: Pick<TemplateLayout["elements"][number], "x" | "y" | "w" | "h">,
+) {
+  const dx = line.w;
+  const dy = line.h;
+  let start = 0;
+  let end = 1;
+  const edges = [
+    [-dx, line.x - slot.x],
+    [dx, slot.x + slot.w - line.x],
+    [-dy, line.y - slot.y],
+    [dy, slot.y + slot.h - line.y],
+  ];
+  for (const [direction, distance] of edges) {
+    if (direction === 0) {
+      if (distance < 0) return 0;
+      continue;
+    }
+    const bound = distance / direction;
+    if (direction < 0) start = Math.max(start, bound);
+    else end = Math.min(end, bound);
+    if (start >= end) return 0;
+  }
+  return Math.hypot(dx, dy) * (end - start) * 2;
 }
 
 function intersectionArea(

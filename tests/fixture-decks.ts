@@ -32,7 +32,7 @@ export async function createFixtureTemplate(theme: FixtureTheme = "bright") {
   title.addShape(pptx.ShapeType.ellipse, { x: 9.7, y: 1.05, w: 2.1, h: 2.1, fill: { color: accent, transparency: 15 }, line: { color: accent } });
   if (theme === "photo") {
     title.addImage({
-      data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLZ4QAAAABJRU5ErkJggg==",
+      data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
       x: 9.7,
       y: 3.55,
       w: 2.1,

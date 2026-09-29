@@ -726,6 +726,10 @@ html:has(.setup-shell), body:has(.setup-shell) {
 .editor-toolbar { justify-content: space-between; gap: 18px; margin-bottom: 22px; }
 .editor-breadcrumb { color: var(--brand-secondary); font-size: 0.75rem; font-weight: 800; }
 .editor-toolbar h2 { max-width: 36ch; margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.2rem; letter-spacing: -0.018em; }
+.editor-history-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.editor-history-controls button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; }
+.editor-history-controls button:disabled { opacity: .45; cursor: default; }
+.editor-history-controls button:not(:disabled):hover { border-color: var(--brand-secondary); }
 .editor-toolbar-actions { flex: 0 0 auto; gap: 10px; }
 .audit-pill { padding: 5px 8px; border-radius: 999px; background: rgb(138 131 209 / 20%); color: var(--brand-action-soft); font-size: 0.73rem; }
 .audit-error { background: rgb(255 0 83 / 20%); color: var(--brand-action-soft); }

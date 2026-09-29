@@ -79,7 +79,14 @@ function substantiveSlideSignature(title: string, canvas: SlideCanvas): string |
     .map((element) => normalizeSlideText(element.text))
     .filter((text) => text && text !== normalizedTitle)
     .sort();
-  return normalizedTitle && body.length ? JSON.stringify([normalizedTitle, body]) : undefined;
+  const tables = canvas.elements
+    .filter((element): element is Extract<CanvasElement, { type: "table" }> => element.type === "table")
+    // A header identifies substantive data, but a repeated header alone is not substantive content.
+    .map((table) => table.rows.map((row) => row.map((cell) => normalizeSlideText(cell.text))))
+    .filter((rows) => rows.slice(1).some((row) => row.some(Boolean)))
+    .map((rows) => JSON.stringify(rows))
+    .sort();
+  return normalizedTitle && (body.length || tables.length) ? JSON.stringify([normalizedTitle, body, tables]) : undefined;
 }
 
 function normalizeSlideText(text: string): string {
@@ -146,6 +153,16 @@ export function auditCanvas(canvas: SlideCanvas, designSystem: DesignSystem): Au
       )) {
         issues.push(issue("SMALL_MARGIN", "warning", element.id, "Text is too close to the slide edge"));
       }
+    }
+    if (element.type === "table") {
+      element.rows.forEach((row, rowIndex) => row.forEach((cell, columnIndex) => {
+        if (PLACEHOLDER_TEXT_PATTERN.test(cell.text)) {
+          issues.push(issue(
+            "EMPTY_PLACEHOLDER", "error", element.id,
+            `Table cell at row ${rowIndex + 1}, column ${columnIndex + 1} contains placeholder content`,
+          ));
+        }
+      }));
     }
     if (element.type === "shape" && !allowedColors.has(element.fill.toUpperCase()) && !allowedColors.has(element.stroke.toUpperCase())) {
       issues.push(issue("COLOR_OUTSIDE_DESIGN_SYSTEM", "info", element.id, "Shape uses a color outside the extracted palette"));

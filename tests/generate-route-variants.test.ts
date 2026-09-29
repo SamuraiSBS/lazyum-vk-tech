@@ -91,7 +91,7 @@ describe("POST /api/generate three-variant contract", () => {
       expect(table?.type).toBe("table");
       if (table?.type !== "table") continue;
       expect(table.rows.map((row) => row.map((cell) => cell.text))).toEqual([
-        ["", "Completed"], ["Q1", "42"], ["Q2", "57"],
+        ["Period", "Completed"], ["Q1", "42"], ["Q2", "57"],
       ]);
     }
   });

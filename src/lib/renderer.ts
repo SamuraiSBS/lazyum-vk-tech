@@ -140,11 +140,20 @@ function renderSlide(
   const palette = designSystem.colors;
   const background = layout.background || palette[0] || "#FFFFFF";
   const usesTimelineFallback = slide.visualIntent === "timeline" && layout.composition !== "timeline";
+  const markerRows = excessMarkerRows(layout, slide.content.length);
+  const isEnding = slide.purpose === "summary" || slide.purpose === "next_steps";
   const artwork = templateArtworkObstacles(layout, { includeFilledTextDecorations: true });
   const sourceSlotArtwork = templateArtworkObstacles(layout, {
     ignoreLines: true,
     includeFilledTextDecorations: true,
   });
+  const markerArtwork = markerRows.flatMap((row) => [...row.images, ...(row.background ? [row.background] : [])]);
+  const placementArtwork = isEnding && markerRows.length
+    ? artwork.filter((rect) => !markerArtwork.some((marker) => sameRect(rect, marker)))
+    : artwork;
+  const placementSourceArtwork = isEnding && markerRows.length
+    ? sourceSlotArtwork.filter((rect) => !markerArtwork.some((marker) => sameRect(rect, marker)))
+    : sourceSlotArtwork;
   const fullBleedRaster = fullBleedRasterBackground(layout);
   const elements: CanvasElement[] = [];
   // PowerPoint often stores filled cards and panels as empty text boxes. The
@@ -174,6 +183,7 @@ function renderSlide(
         alt: element.name || "Template image",
         dataUrl: element.imageDataUrl,
         ...(element.crop ? { crop: element.crop } : {}),
+        ...(element.rotation ? { rotation: element.rotation } : {}),
         zIndex: element.zIndex,
         locked: false,
         sourceTemplateElementId: element.id,
@@ -254,6 +264,15 @@ function renderSlide(
     : titleSeparatedBodyCandidates.length
       ? titleSeparatedBodyCandidates
       : [rasterBodyFallback || fallback[1]];
+  if (isEnding && markerRows.length && contentSlots[0] && contentSlots[0].w < layout.width * 0.45) {
+    contentSlots[0] = {
+      ...fallback[1],
+      x: layout.width * 0.24,
+      y: Math.max(layout.height * 0.4, titleSlot.y + titleSlot.h + layout.height * 0.05),
+      w: layout.width * 0.54,
+      h: layout.height * 0.32,
+    };
+  }
   const usesCardFallback = slide.visualIntent === "cards" && slide.content.length >= 2 && layout.cardCount < 3
     && slots.length < 4 && !distributesAcrossCards;
   const contentValues = usesCardFallback
@@ -276,10 +295,10 @@ function renderSlide(
   const positionedAssignments = materializeTextAssignments(
     assignments,
     layout,
-    artwork,
+    placementArtwork,
     useRasterBodyFallback,
     distributesAcrossCards,
-    sourceSlotArtwork,
+    placementSourceArtwork,
   );
   positionedAssignments.forEach(({ slot, value, index }) => {
     if (!slot || !value) return;
@@ -350,7 +369,7 @@ function renderSlide(
     ));
   }
   if (usesCardFallback) {
-    elements.push(...fallbackCards(slide.id, slide.content, layout, background, palette, designSystem, artwork));
+    elements.push(...fallbackCards(slide.id, slide.content, layout, background, palette, designSystem, artwork, titleSlot));
   }
   dataVisuals.forEach((input) => {
     if (input.spec.visualType === "table") {
@@ -384,10 +403,23 @@ function renderSlide(
       && populatedSourceSlots.some((used) => Math.abs(used.x - slot.x) < 1
         && Math.abs(used.w - slot.w) < 1 && Math.abs(used.h - slot.h) < 1))
     : [];
-  const visibleElements = unusedMetricRows.length
-    ? elements.filter((element) => element.type === "text" || !element.sourceTemplateElementId
-      || !unusedMetricRows.some((row) => containsRect(row, element)))
-    : elements;
+  const unusedMarkerIds = new Set<string>();
+  if (markerRows.length) {
+    for (const row of markerRows) {
+      const populated = !usesTimelineFallback && !isEnding && positionedAssignments.some(({ slot, index }) =>
+        index > 0 && slot.x >= row.anchor.x + row.anchor.w - 5
+          && slot.x - row.anchor.x - row.anchor.w <= layout.width * 0.08
+          && slot.y < row.anchor.y + row.anchor.h
+          && slot.y + slot.h > row.anchor.y);
+      if (!populated) {
+        row.images.forEach((image) => unusedMarkerIds.add(image.id));
+        if (row.background) unusedMarkerIds.add(row.background.id);
+      }
+    }
+  }
+  const visibleElements = elements.filter((element) => element.type === "text" || !element.sourceTemplateElementId
+    || (!unusedMarkerIds.has(element.sourceTemplateElementId)
+      && !unusedMetricRows.some((row) => containsRect(row, element))));
 
   return {
     width: layout.width,
@@ -743,6 +775,50 @@ function containsRect(container: Rect, content: Rect) {
     && content.y + content.h <= container.y + container.h;
 }
 
+function sameRect(left: Rect, right: Rect) {
+  return left.x === right.x && left.y === right.y && left.w === right.w && left.h === right.h;
+}
+
+/** Only images attached one-to-one to repeated source text slots are item
+ * markers. A repeated decorative icon run without those slots is artwork. */
+function excessMarkerRows(layout: TemplateLayout, itemCount: number) {
+  if (!itemCount) return [];
+  const images = layout.elements.filter((image) => image.type === "image" && Boolean(image.imageDataUrl)
+    && isContainedInCanvas(image, layout.width, layout.height)
+    && image.y >= layout.height * 0.12 && image.y + image.h <= layout.height * 0.82
+    && image.w <= layout.width * 0.08 && image.h <= layout.height * 0.12)
+    .sort((left, right) => right.w * right.h - left.w * left.h);
+  const groups: Array<{ anchor: TemplateElement; images: TemplateElement[]; background?: TemplateElement; slot?: TemplateElement }> = [];
+  for (const image of images) {
+    const centerX = image.x + image.w / 2;
+    const centerY = image.y + image.h / 2;
+    const group = groups.find(({ anchor }) => Math.abs(centerX - anchor.x - anchor.w / 2) <= Math.max(3, anchor.w * 0.15)
+      && Math.abs(centerY - anchor.y - anchor.h / 2) <= Math.max(3, anchor.h * 0.15));
+    if (group) group.images.push(image);
+    else groups.push({ anchor: image, images: [image] });
+  }
+  const runs = groups.map((group) => groups.filter((peer) =>
+    Math.abs(peer.anchor.w - group.anchor.w) <= Math.max(2, group.anchor.w * 0.08)
+    && Math.abs(peer.anchor.h - group.anchor.h) <= Math.max(2, group.anchor.h * 0.08)));
+  const largest = runs.sort((left, right) => right.length - left.length)[0] || [];
+  if (largest.length < 6 || largest.length <= itemCount + 1) return [];
+  const sourceSlots = layout.elements.filter((element) => (element.type === "text" || element.type === "placeholder")
+    && isUsableTextSlot(element, layout)
+    && element.w * element.h <= layout.width * layout.height * 0.2);
+  const paired = largest.map((group) => ({ ...group, slot: sourceSlots
+    .filter((slot) => containsRect(slot, group.anchor))
+    .sort((left, right) => left.w * left.h - right.w * right.h)[0] }));
+  if (paired.some((group) => !group.slot)
+    || new Set(paired.map((group) => group.slot!.id)).size !== paired.length) return [];
+  const peer = paired[0]!.slot!;
+  if (paired.some((group) => Math.abs(group.slot!.w - peer.w) > Math.max(2, peer.w * 0.08)
+    || Math.abs(group.slot!.h - peer.h) > Math.max(2, peer.h * 0.08))) return [];
+  return paired.map((group) => ({ ...group, background: layout.elements.find((element) =>
+    (element.type === "text" || element.type === "placeholder") && !element.text.trim()
+      && Boolean(element.fill || element.stroke) && containsRect(element, group.anchor)
+      && element.w * element.h <= group.anchor.w * group.anchor.h * 12) }));
+}
+
 function candidateAxisPositions(
   limit: number,
   size: number,
@@ -854,6 +930,7 @@ function sameImagePlacement(left: TemplateElement, right: TemplateElement) {
     && left.y === right.y
     && left.w === right.w
     && left.h === right.h
+    && left.rotation === right.rotation
     && (left.crop === right.crop || (Boolean(left.crop) && Boolean(right.crop)
       && left.crop!.left === right.crop!.left
       && left.crop!.top === right.crop!.top
@@ -1135,6 +1212,7 @@ function fallbackCards(
   palette: string[],
   designSystem: DesignSystem,
   artwork: readonly Rect[],
+  titleSlot: Rect,
 ): CanvasElement[] {
   const values = packCardContent(content, 4);
   const gap = Math.max(16, layout.width * 0.02);
@@ -1148,7 +1226,8 @@ function fallbackCards(
     const x = layout.width * 0.09 + index * (cardWidth + gap);
     const card = { x, y: candidateY, w: cardWidth, h: cardHeight };
     const text = { x: x + 16, y: candidateY + 15, w: cardWidth - 32, h: layout.height * 0.12 };
-    return !overlapsArtwork(card, artwork) && !overlapsArtwork(text, artwork);
+    return !overlapsElement(card, titleSlot) && !overlapsElement(text, titleSlot)
+      && !overlapsArtwork(card, artwork) && !overlapsArtwork(text, artwork);
   })) ?? preferredY;
   const fill = palette.at(1) || (background === "#FFFFFF" ? "#F2F4F8" : "#FFFFFF");
   return values.flatMap((value, index) => {
