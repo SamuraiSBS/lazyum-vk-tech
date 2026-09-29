@@ -1,12 +1,9 @@
 import JSZip from "jszip";
+import { PDFParse } from "pdf-parse";
 import { describe, expect, it, vi } from "vitest";
 import { normalizeContent } from "../src/lib/content-parser";
 import { normalizedContentSchema } from "../src/lib/schemas";
 import { createFixtureTemplate } from "./fixture-decks";
-
-vi.mock("pdf-parse", () => ({
-  default: async () => ({ text: "PDF text without page attribution." }),
-}));
 
 describe("content parser provenance", () => {
   it("adds exact line locators for TXT and Markdown while retaining the flat fields", async () => {
@@ -296,19 +293,97 @@ describe("content parser provenance", () => {
       .toBe(true);
   });
 
-  it("uses document precision for DOCX and PDF without inventing pages", async () => {
+  it("locates DOCX body and table paragraphs in document order with stable IDs", async () => {
+    const docx = await createDocxFromBody([
+      '<w:p><w:r><w:t>Introduction</w:t></w:r></w:p>',
+      '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>First cell</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Second </w:t></w:r><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
+      '<w:p><w:r><w:t>Conclusion</w:t></w:r></w:p>',
+    ].join(""));
+    const files = [{ name: "ordered.docx", type: "", buffer: docx }];
+    const first = await normalizeContent("DOCX provenance", files);
+    const second = await normalizeContent("DOCX provenance", files);
+    expect(first.sourceChunks.map(({ locator, precision, text }) => ({ locator, precision, text }))).toEqual([
+      { locator: "paragraph:1", precision: "exact", text: "Introduction" },
+      { locator: "paragraph:2", precision: "exact", text: "First cell" },
+      { locator: "paragraph:3", precision: "exact", text: "Second cell" },
+      { locator: "paragraph:4", precision: "exact", text: "Conclusion" },
+    ]);
+    expect(second.sourceChunks.map(({ sourceId, chunkId }) => ({ sourceId, chunkId })))
+      .toEqual(first.sourceChunks.map(({ sourceId, chunkId }) => ({ sourceId, chunkId })));
+  });
+
+  it("does not fabricate DOCX chunks for empty body and falls back for unsupported text structure", async () => {
+    const empty = await normalizeContent("Empty DOCX", [{
+      name: "empty.docx", type: "", buffer: await createDocxFromBody("<w:p/>"),
+    }]);
+    expect(empty.sourceChunks).toEqual([]);
+
+    const unsupported = await normalizeContent("Unsupported DOCX", [{
+      name: "field.docx", type: "", buffer: await createDocxFromBody('<w:p><w:r><w:t>Known text</w:t></w:r><w:fldSimple w:instr="test"><w:r><w:t>Field value</w:t></w:r></w:fldSimple></w:p>'),
+    }]);
+    expect(unsupported.sourceChunks).toHaveLength(1);
+    expect(unsupported.sourceChunks[0]?.text).toContain("Known text");
+    expect(unsupported.sourceChunks.every((chunk) => chunk.locator === "document" && chunk.precision === "document"))
+      .toBe(true);
+    expect(unsupported.sourceChunks.every((chunk) => !chunk.locator.startsWith("paragraph:"))).toBe(true);
+    await expect(normalizeContent("Malformed DOCX", [{
+      name: "malformed.docx", type: "", buffer: Buffer.from("not a zip"),
+    }])).rejects.toThrow();
+  });
+
+  it.each([
+    ["foreign paragraph", '<x:p xmlns:x="urn:foreign"><x:r><x:t>Foreign paragraph</x:t></x:r></x:p>'],
+    ["foreign text", '<w:p><w:r><x:t xmlns:x="urn:foreign">Foreign text</x:t></w:r></w:p>'],
+    ["rebound paragraph prefix", '<w:p xmlns:w="urn:foreign"><w:r><w:t>Rebound paragraph</w:t></w:r></w:p>'],
+    ["rebound text prefix", '<w:p><w:r><w:t xmlns:w="urn:foreign">Rebound text</w:t></w:r></w:p>'],
+  ])("does not assign exact DOCX paragraph provenance to %s", async (_case, body) => {
+    const buffer = await createDocxFromBody(body);
+    await normalizeContent("Namespace provenance", [{ name: "foreign.docx", type: "", buffer }]).then(
+      (content) => expect(content.sourceChunks.every((chunk) => chunk.locator === "document" && chunk.precision === "document"))
+        .toBe(true),
+      (error: unknown) => expect(error).toBeInstanceOf(Error),
+    );
+  });
+
+  it("uses actual PDF page numbers alongside DOCX paragraphs", async () => {
     const docx = await createDocx("DOCX material");
+    const pdf = createPdf(["First page", "", "Third page"]);
     const content = await normalizeContent("Document materials", [
       { name: "notes.docx", type: "", buffer: docx },
-      { name: "report.pdf", type: "application/pdf", buffer: Buffer.from("mock pdf") },
+      { name: "report.pdf", type: "application/pdf", buffer: pdf },
     ]);
 
-    expect(content.sourceChunks).toEqual(expect.arrayContaining([
-      expect.objectContaining({ sourceName: "notes.docx", locator: "document", precision: "document" }),
-      expect.objectContaining({ sourceName: "report.pdf", locator: "document", precision: "document" }),
-    ]));
-    expect(content.sourceChunks.filter((chunk) => chunk.sourceName.endsWith(".docx") || chunk.sourceName.endsWith(".pdf"))
-      .every((chunk) => !/page|стр\.|слайд/iu.test(chunk.locator))).toBe(true);
+    expect(content.sourceChunks.find((chunk) => chunk.sourceName === "notes.docx"))
+      .toEqual(expect.objectContaining({ locator: "paragraph:1", precision: "exact", text: "DOCX material" }));
+    expect(content.sourceChunks.filter((chunk) => chunk.sourceName === "report.pdf"))
+      .toEqual([
+        expect.objectContaining({ locator: "page:1", precision: "exact", text: expect.stringContaining("First page") }),
+        expect.objectContaining({ locator: "page:3", precision: "exact", text: expect.stringContaining("Third page") }),
+      ]);
+    expect(content.documents.find((document) => document.name === "report.pdf")?.text)
+      .toContain("First page Third page");
+    const repeated = await normalizeContent("Document materials", [{ name: "report.pdf", type: "application/pdf", buffer: pdf }]);
+    expect(repeated.sourceChunks.map(({ sourceId, chunkId }) => ({ sourceId, chunkId })))
+      .toEqual(content.sourceChunks.filter((chunk) => chunk.sourceName === "report.pdf")
+        .map(({ sourceId, chunkId }) => ({ sourceId, chunkId })));
+  });
+
+  it("emits no fabricated PDF page chunks when every page is empty", async () => {
+    const content = await normalizeContent("Empty PDF", [{ name: "blank.pdf", type: "", buffer: createPdf(["", ""]) }]);
+    expect(content.documents[0]).toEqual(expect.objectContaining({ text: "", characters: 0 }));
+    expect(content.sourceChunks).toEqual([]);
+  });
+
+  it("disposes the PDF parser when page extraction fails", async () => {
+    const destroy = vi.spyOn(PDFParse.prototype, "destroy");
+    vi.spyOn(PDFParse.prototype, "getText").mockRejectedValueOnce(new Error("PDF page extraction failed"));
+    try {
+      await expect(normalizeContent("Broken PDF", [{ name: "broken.pdf", type: "", buffer: createPdf(["Page"]) }]))
+        .rejects.toThrow("PDF page extraction failed");
+      expect(destroy).toHaveBeenCalledOnce();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it("generates stable source and chunk IDs for the same inputs", async () => {
@@ -384,11 +459,43 @@ describe("content parser provenance", () => {
 });
 
 async function createDocx(text: string) {
+  return createDocxFromBody(`<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`);
+}
+
+async function createDocxFromBody(body: string) {
   const zip = new JSZip();
   zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`);
   zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
-  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`);
+  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}</w:body></w:document>`);
   return zip.generateAsync({ type: "nodebuffer" });
+}
+
+function createPdf(pageTexts: string[]) {
+  const pageStart = 3;
+  const fontNumber = pageStart + pageTexts.length;
+  const streamStart = fontNumber + 1;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${pageTexts.map((_, index) => `${pageStart + index} 0 R`).join(" ")}] /Count ${pageTexts.length} >>`,
+    ...pageTexts.map((_, index) => `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontNumber} 0 R >> >> /Contents ${streamStart + index} 0 R >>`),
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ...pageTexts.map((text) => {
+      const escaped = text.replace(/[\\()]/gu, "\\$&");
+      const stream = text ? `BT /F1 12 Tf 72 700 Td (${escaped}) Tj ET` : "";
+      return `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`;
+    }),
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, "ascii");
 }
 
 async function createXlsx() {

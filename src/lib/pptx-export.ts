@@ -35,14 +35,19 @@ export async function createPresentationPptx(document: PresentationDocument): Pr
     slide.addNotes("Generated from template layout " + rendered.templateLayoutId);
   }
   const output = await pptx.write({ outputType: "nodebuffer" }) as Buffer;
-  return preserveImageCrops(await preservePieChartZeroValues(output, document), document);
+  const hasCrops = document.slides.some((slide) => slide.canvas.elements.some((element) => element.type === "image" && element.crop && element.dataUrl));
+  const hasChartZeros = document.slides.some((slide) => slide.canvas.elements.some((element) => element.type === "chart"
+    && element.series.values.some((datum) => datum.value === 0)));
+  if (!hasCrops && !hasChartZeros) return output;
+  // Patch both OOXML features in one archive. Repacking a second full PPTX
+  // retains another copy of every embedded image during Visual export.
+  const archive = await JSZip.loadAsync(output);
+  if (hasChartZeros) await preservePieChartZeroValues(archive, document);
+  if (hasCrops) await preserveImageCrops(archive, document);
+  return archive.generateAsync({ type: "nodebuffer", streamFiles: true });
 }
 
-async function preserveImageCrops(output: Buffer, document: PresentationDocument): Promise<Buffer> {
-  if (!document.slides.some((slide) => slide.canvas.elements.some((element) => element.type === "image" && element.crop && element.dataUrl))) {
-    return output;
-  }
-  const archive = await JSZip.loadAsync(output);
+async function preserveImageCrops(archive: JSZip, document: PresentationDocument): Promise<void> {
   for (const [slideIndex, rendered] of document.slides.entries()) {
     const images = [...rendered.canvas.elements]
       .sort((left, right) => left.zIndex - right.zIndex)
@@ -80,20 +85,16 @@ async function preserveImageCrops(output: Buffer, document: PresentationDocument
     }
     archive.file(path, updated);
   }
-  return archive.generateAsync({ type: "nodebuffer" });
 }
 
 function cropToOoxml(percent: number): number {
   return Math.round(percent * 1000);
 }
 
-async function preservePieChartZeroValues(output: Buffer, document: PresentationDocument): Promise<Buffer> {
+async function preservePieChartZeroValues(archive: JSZip, document: PresentationDocument): Promise<void> {
   const pieCharts = document.slides.flatMap((slide) => [...slide.canvas.elements]
     .sort((left, right) => left.zIndex - right.zIndex)
     .filter((element): element is Extract<CanvasElement, { type: "chart" }> => element.type === "chart"));
-  if (!pieCharts.some((chart) => chart.series.values.some((datum) => datum.value === 0))) return output;
-
-  const archive = await JSZip.loadAsync(output);
   const chartParts = Object.keys(archive.files)
     .filter((path) => /^ppt\/charts\/chart\d+\.xml$/u.test(path))
     .sort((left, right) => Number(left.match(/chart(\d+)\.xml$/u)?.[1]) - Number(right.match(/chart(\d+)\.xml$/u)?.[1]));
@@ -133,7 +134,6 @@ async function preservePieChartZeroValues(output: Buffer, document: Presentation
     archive.file(workbookPath, await workbook.generateAsync({ type: "nodebuffer" }));
   }
 
-  return archive.generateAsync({ type: "nodebuffer" });
 }
 
 function renderNativeElement(pptx: any, slide: any, element: CanvasElement, designSystem: DesignSystem) {
@@ -153,7 +153,8 @@ function renderNativeElement(pptx: any, slide: any, element: CanvasElement, desi
     return;
   }
   if (element.type === "image") {
-    if (element.dataUrl) slide.addImage({ data: element.dataUrl, ...canvasBox(element) });
+    if (element.dataUrl) slide.addImage({ data: element.dataUrl, ...canvasBox(element),
+      ...(element.rotation ? { rotate: element.rotation } : {}) });
     return;
   }
   if (element.type === "chart") {

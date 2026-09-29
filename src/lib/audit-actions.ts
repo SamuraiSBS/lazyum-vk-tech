@@ -1,4 +1,4 @@
-import { auditPresentation } from "./audit";
+import { auditPresentation, measureTextForBox } from "./audit";
 import type { AuditIssue, AuditReport, CanvasElement, PresentationDocument } from "./schemas";
 
 export type AuditAction = "fix" | "ignore";
@@ -12,7 +12,7 @@ export function auditIssueKey(slideId: string, issue: Pick<AuditIssue, "type" | 
 }
 
 export function isAutoFixableAuditIssue(issue: Pick<AuditIssue, "type" | "elementId">): boolean {
-  return Boolean(issue.elementId) && (issue.type === "OUTSIDE_SLIDE" || issue.type === "UNSUPPORTED_FONT");
+  return Boolean(issue.elementId) && (issue.type === "OUTSIDE_SLIDE" || issue.type === "UNSUPPORTED_FONT" || issue.type === "LOW_TEXT_CONTRAST" || issue.type === "TEXT_OVERFLOW");
 }
 
 /**
@@ -31,6 +31,8 @@ export function applyAuditDecision(
     return withDecision(document, { issueKey, slideId, elementId: issue.elementId, action, appliedAt });
   }
   if (!isAutoFixableAuditIssue(issue)) return document;
+  // A stale finding must not change text whose background or color has since changed.
+  if ((issue.type === "LOW_TEXT_CONTRAST" || issue.type === "TEXT_OVERFLOW") && !hasCurrentIssue(document, slideId, issueKey)) return document;
 
   const candidate = applySafeFix(document, slideId, issue);
   if (candidate === document || hasCurrentIssue(candidate, slideId, issueKey)) return document;
@@ -69,6 +71,55 @@ function applySafeFix(document: PresentationDocument, slideId: string, issue: Au
   const targetSlide = document.slides.find((slide) => slide.id === slideId);
   if (!targetSlide || !issue.elementId) return document;
   const target = targetSlide.canvas.elements.find((element) => element.id === issue.elementId);
+  if (issue.type === "TEXT_OVERFLOW") {
+    if (document.slides.filter((slide) => slide.id === slideId).length !== 1
+      || targetSlide.canvas.elements.filter((element) => element.id === issue.elementId).length !== 1
+      || target?.type !== "text" || target.locked) return document;
+    const originalIssues = auditPresentation(document).slides.find((slide) => slide.slideId === slideId)?.issues || [];
+    const originalUnsafe = unsafeIssueCounts(originalIssues);
+    const replacements: CanvasElement[] = [];
+    const requiredHeight = measureTextForBox(target.text, target.fontSize, target.w).height;
+    if (Number.isFinite(requiredHeight) && requiredHeight > target.h && target.y + requiredHeight <= targetSlide.canvas.height) {
+      replacements.push({ ...target, h: requiredHeight });
+    }
+    for (let size = Math.floor(target.fontSize); size >= 14; size -= 1) {
+      if (size >= target.fontSize) continue;
+      if (measureTextForBox(target.text, size, target.w).height <= target.h) {
+        replacements.push({ ...target, fontSize: size });
+        break;
+      }
+    }
+    for (const replacement of replacements) {
+      const candidate = replaceElement(document, slideId, target.id, replacement);
+      const findings = auditPresentation(candidate).slides.find((slide) => slide.slideId === slideId)?.issues || [];
+      if (!findings.some((finding) => finding.type === "TEXT_OVERFLOW" && finding.elementId === target.id)
+        && !addsUnsafeIssue(originalUnsafe, unsafeIssueCounts(findings))) return candidate;
+    }
+    return document;
+  }
+  if (issue.type === "LOW_TEXT_CONTRAST" && target?.type === "text") {
+    if (targetSlide.canvas.elements.filter((element) => element.id === target.id).length !== 1) return document;
+    // The audit is the single authority on both background ambiguity and the
+    // normal/large WCAG threshold. Palette order gives a stable tie break.
+    for (const color of document.designSystem.colors) {
+      if (!/^#[0-9a-f]{6}$/i.test(color) || color.toUpperCase() === target.color.toUpperCase()) continue;
+      const replacement = { ...target, color };
+      const candidate: PresentationDocument = {
+        ...document,
+        slides: document.slides.map((slide) => slide.id !== slideId ? slide : {
+          ...slide,
+          canvas: {
+            ...slide.canvas,
+            elements: slide.canvas.elements.map((element) => element.id === target.id ? replacement : element),
+          },
+        }),
+      };
+      if (!auditPresentation(candidate).slides.find((slide) => slide.slideId === slideId)?.issues.some(
+        (finding) => finding.type === "LOW_TEXT_CONTRAST" && finding.elementId === target.id,
+      )) return candidate;
+    }
+    return document;
+  }
   const replacement = target && safeReplacement(target, targetSlide.canvas, document, issue);
   if (!replacement) return document;
 
@@ -79,6 +130,30 @@ function applySafeFix(document: PresentationDocument, slideId: string, issue: Au
       canvas: { ...slide.canvas, elements: slide.canvas.elements.map((element) => element.id === issue.elementId ? replacement : element) },
     }),
   };
+}
+
+function replaceElement(document: PresentationDocument, slideId: string, elementId: string, replacement: CanvasElement): PresentationDocument {
+  return {
+    ...document,
+    slides: document.slides.map((slide) => slide.id !== slideId ? slide : {
+      ...slide,
+      canvas: { ...slide.canvas, elements: slide.canvas.elements.map((element) => element.id === elementId ? replacement : element) },
+    }),
+  };
+}
+
+function unsafeIssueCounts(issues: AuditIssue[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const issue of issues) {
+    if (issue.severity !== "error" && issue.type !== "ELEMENT_OVERLAP") continue;
+    const key = JSON.stringify([issue.type, issue.severity, issue.elementId, issue.message]);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return counts;
+}
+
+function addsUnsafeIssue(before: Map<string, number>, after: Map<string, number>): boolean {
+  return [...after].some(([key, count]) => count > (before.get(key) || 0));
 }
 
 function safeReplacement(

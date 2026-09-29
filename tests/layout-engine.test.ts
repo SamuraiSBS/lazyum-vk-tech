@@ -33,6 +33,37 @@ describe("Layout Engine", () => {
     expect(layout.visualSlots).toBeGreaterThan(0);
   });
 
+  it("prefers a readable large image composition without treating thin diagonal lines as filled artwork", async () => {
+    const templatePath = path.resolve(process.cwd(), "fixtures", "templates", "organizer", "Шаблон презентации VK Education.pptx");
+    const design = await parsePptxTemplate(await readFile(templatePath), "image-layouts.pptx");
+    const largeImage = design.layouts.find((layout) => layout.id === "slide-34");
+    const smallerImage = design.layouts.find((layout) => layout.id === "slide-33");
+    const clippedImage = design.layouts.find((layout) => layout.id === "layout-16");
+    if (!largeImage || !smallerImage || !clippedImage) throw new Error("Image layout regression requires source compositions");
+    const withoutCrops = design.layouts.map((layout) => ({
+      ...layout,
+      name: "Unlabelled visual composition",
+      elements: layout.elements.map((element) => element.type === "image" ? { ...element, crop: undefined } : element),
+    }));
+    const slide = {
+      id: "image-story",
+      purpose: "opportunity" as const,
+      title: "Программа обучения",
+      content: ["Новые возможности для участников"],
+      visualIntent: "image" as const,
+    };
+
+    for (const variant of ["compact", "balanced", "visual"] as const) {
+      const selected = chooseTemplateLayout({ ...design, layouts: withoutCrops }, slide, variant);
+      expect(selected.id, variant).toBe(largeImage.id);
+      const blocked = withoutCrops.map((layout) => layout.id === largeImage.id
+        ? { ...layout, elements: layout.elements.map((element) => element.type === "line"
+          ? { ...element, type: "shape" as const } : element) }
+        : layout);
+      expect(chooseTemplateLayout({ ...design, layouts: blocked }, slide, variant).id, variant).toBe(smallerImage.id);
+    }
+  });
+
   it("does not choose an oversized visual layout", async () => {
     const design = await parsePptxTemplate(await createFixtureTemplate("photo"), "dense.pptx");
     const sourceElement = design.layouts[0].elements[0];

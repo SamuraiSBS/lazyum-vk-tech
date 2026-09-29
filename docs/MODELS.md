@@ -66,7 +66,7 @@ usage либо usageUnknown. Оценка токенов не является �
   Linux acceptance.
 - Минимальные CPU/RAM/disk-параметры приложения и его throughput не
   бенчмаркировались. Пока нет данных для численных аппаратных требований.
-  Подробности проверки реальных шаблонов и ограничения визуальной приёмки см. в [REAL_TEMPLATE_ACCEPTANCE.md](REAL_TEMPLATE_ACCEPTANCE.md).
+  Историю проверки runtime см. в [DEPLOY_READINESS.md](DEPLOY_READINESS.md).
 
 ## Deterministic local mock roles
 

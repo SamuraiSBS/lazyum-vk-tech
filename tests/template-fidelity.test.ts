@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
+import JSZip from "jszip";
 import { chooseTemplateLayout } from "../src/lib/layout-engine";
 import { renderPresentation } from "../src/lib/renderer";
 import { parsePptxTemplate } from "../src/lib/template-parser";
 import { normalizeContent } from "../src/lib/content-parser";
 import { createPresentationPlan } from "../src/lib/planner";
 import { auditPresentation } from "../src/lib/audit";
+import { createPresentationPptx } from "../src/lib/pptx-export";
 import type { DesignSystem, PresentationPlan, TemplateElement, TemplateLayout } from "../src/lib/schemas";
 import { createFixtureTemplate, type FixtureTheme } from "./fixture-decks";
 
@@ -17,6 +19,67 @@ const FIXTURE_PALETTES: Record<FixtureTheme, string[]> = {
 };
 
 const PIXEL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLZ4QAAAABJRU5ErkJggg==";
+
+it("uses proportionate source compositions for sparse organizer Visual slides", async () => {
+  for (const [name, index] of [
+    ["VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx", 1],
+    ["Шаблон презентации VK Education.pptx", 5],
+  ] as const) {
+    const design = await parsePptxTemplate(await readFile(new URL(`../fixtures/templates/organizer/${name}`, import.meta.url)), name);
+    const plan = await createPresentationPlan(await normalizeContent("Create a ten-slide, fact-based overview of reliable export layout parity and presentation readability.", []), 10);
+    const document = renderPresentation(design, plan, "visual", [], { variantGeometry: true });
+    const repeated = renderPresentation(design, plan, "visual", [], { variantGeometry: true });
+    const renderSignature = (renderedDocument: typeof document) => JSON.stringify(renderedDocument.slides.map((slide) => ({
+      layout: slide.templateLayoutId,
+      elements: slide.canvas.elements.map((element) => ({
+        id: element.id,
+        type: element.type,
+        source: element.sourceTemplateElementId,
+        x: element.x,
+        y: element.y,
+        w: element.w,
+        h: element.h,
+        text: element.type === "text" ? element.text : undefined,
+      })),
+    })));
+    expect(renderSignature(repeated)).toBe(renderSignature(document));
+    const rendered = document.slides[index]!;
+    const source = design.layouts.find((layout) => layout.id === rendered.templateLayoutId)!;
+    const text = rendered.canvas.elements.filter((element) => element.type === "text");
+    const body = text.filter((element) => element.id !== `${rendered.id}-text-0`);
+    expect(auditPresentation(document).passed).toBe(true);
+    expect(normalize(text.map((element) => element.text).join(" "))).toContain(normalize(plan.slides[index]!.title));
+    plan.slides[index]!.content.forEach((item) => expect(normalize(text.map((element) => element.text).join(" "))).toContain(normalize(item)));
+    if (index === 1) {
+      expect(source.id).toBe("slide-6");
+      expect(body).toHaveLength(2);
+      const sourceBodySlots = body.map((element) => source.elements.find((slot) => (
+        slot.id === element.sourceTemplateElementId
+        && (slot.type === "text" || slot.type === "placeholder")
+      )));
+      expect(sourceBodySlots.every(Boolean)).toBe(true);
+      expect(new Set(sourceBodySlots.map((slot) => slot?.id)).size).toBe(body.length);
+      expect(body.every((element, bodyIndex) => (
+        element.sourceTemplateElementId === sourceBodySlots[bodyIndex]?.id
+        && element.x >= 0 && element.y >= 0
+        && element.x + element.w <= rendered.canvas.width
+        && element.y + element.h <= rendered.canvas.height
+      ))).toBe(true);
+    } else {
+      expect(source.id).toBe("slide-23");
+      expect(source.composition).toBe("timeline");
+      expect(body).toHaveLength(3);
+      expect(body.every((element) => element.id.includes("timeline-label"))).toBe(true);
+      expect(Math.max(...body.map((element) => element.x)) - Math.min(...body.map((element) => element.x)))
+        .toBeGreaterThan(rendered.canvas.width * 0.4);
+    }
+    const published = await JSZip.loadAsync(await createPresentationPptx(document));
+    const slideXml = await published.file(`ppt/slides/slide${index + 1}.xml`)?.async("string");
+    expect(slideXml).toBeDefined();
+    const exportedText = normalize(Array.from(slideXml!.matchAll(/<a:t>(.*?)<\/a:t>/gu), (match) => match[1]).join(" "));
+    for (const item of plan.slides[index]!.content) expect(exportedText.includes(normalize(item))).toBe(true);
+  }
+}, 120000);
 
 describe("role-aware template fidelity", () => {
   it.each(["bright", "dark", "photo", "portrait"] as const)(

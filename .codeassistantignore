@@ -1,0 +1,25 @@
+# Secrets and machine-local configuration. Do not attach these files manually
+# to a SourceCraft chat either: explicit @mentions can bypass ignore rules.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+credentials*.json
+
+# Generated, dependency, and local-runtime files do not help code review.
+node_modules/
+.next/
+.data/
+*.log
+tsconfig.tsbuildinfo
+
+# Keep user-provided/binary presentation assets out of assistant context.
+fixtures/templates/*.pptx
+
+!.agent-state/
+!.agent-state/sourcecraft/

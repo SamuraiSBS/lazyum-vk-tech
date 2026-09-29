@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import JSZip from "jszip";
 import mammoth from "mammoth";
-import { XMLParser } from "fast-xml-parser";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
 import {
   normalizedContentSchema,
   type InputSourceArtifact,
@@ -15,6 +15,7 @@ import {
 const MAX_SOURCE_BYTES = 12 * 1024 * 1024;
 const MAX_SOURCE_FILES = 12;
 const MAX_TEXT_CHARS = 50_000;
+const WORDPROCESSINGML_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
@@ -144,20 +145,142 @@ async function extractSourceContent(name: string, buffer: Buffer, declaredMimeTy
     return extractImageSource(name, buffer);
   }
   if (extension === ".docx") {
-    const result = await mammoth.extractRawText({ buffer });
-    const text = result.value || "";
-    return { text, chunks: [{ text: limitText(text), locator: "document", precision: "document" }] };
+    return extractDocxSource(buffer);
   }
   if (extension === ".pptx") return extractPptxSource(buffer);
   if (extension === ".pdf") {
-    const module = await import("pdf-parse");
-    const pdfParse = (module as unknown as { default?: (input: Buffer) => Promise<{ text?: string }> }).default;
-    if (!pdfParse) throw new Error("PDF text parser is unavailable");
-    const parsed = await pdfParse(buffer);
-    const text = parsed.text || "";
-    return { text, chunks: [{ text: limitText(text), locator: "document", precision: "document" }] };
+    const { PDFParse } = await import("pdf-parse");
+    const parser = new PDFParse({ data: buffer });
+    try {
+      const parsed = await parser.getText();
+      const pages = parsed.pages.filter((page) => page.text.trim().length > 0);
+      return {
+        text: pages.map((page) => page.text).join("\n\n"),
+        chunks: pages.map((page) => ({
+          text: limitText(page.text),
+          locator: `page:${page.num}`,
+          precision: "exact" as const,
+        })),
+      };
+    } finally {
+      await parser.destroy();
+    }
   }
   throw new Error("Unsupported material type: " + extension);
+}
+
+async function extractDocxSource(buffer: Buffer): Promise<ExtractedSource> {
+  const zip = await JSZip.loadAsync(buffer, { createFolders: false, checkCRC32: false });
+  const documentXml = await zip.file("word/document.xml")?.async("string");
+  if (documentXml && documentXml.length <= MAX_SOURCE_BYTES
+    && /<w:document\b[^>]*xmlns:w="http:\/\/schemas\.openxmlformats\.org\/wordprocessingml\/2006\/main"/iu.test(documentXml)
+    && !/<!DOCTYPE|<!ENTITY/iu.test(documentXml)
+    && XMLValidator.validate(documentXml) === true
+    && !/<w:(?:altChunk|txbxContent|fldSimple|instrText|delText)\b/iu.test(documentXml)) {
+    const ordered = new XMLParser({
+      preserveOrder: true,
+      ignoreAttributes: false,
+      trimValues: false,
+      parseTagValue: false,
+      processEntities: true,
+    }).parse(documentXml);
+    const root = orderedChild(ordered, "document", {});
+    const body = root && orderedChild(root.children, "body", root.namespaces);
+    if (body) {
+      const paragraphs: string[] = [];
+      const complete = collectDocxParagraphs(body.children, paragraphs, body.namespaces);
+      if (complete) {
+        let remaining = MAX_TEXT_CHARS;
+        const chunks: ChunkDraft[] = [];
+        paragraphs.forEach((paragraph, index) => {
+          if (!paragraph.trim() || remaining <= 0) return;
+          const text = paragraph.slice(0, remaining);
+          remaining -= text.length;
+          chunks.push({ text, locator: `paragraph:${index + 1}`, precision: "exact" });
+        });
+        return { text: chunks.map((chunk) => chunk.text).join("\n\n"), chunks };
+      }
+    }
+  }
+  const result = await mammoth.extractRawText({ buffer });
+  const text = result.value || "";
+  return { text, chunks: text.trim() ? [{ text: limitText(text), locator: "document", precision: "document" }] : [] };
+}
+
+type OrderedXmlNode = Record<string, unknown>;
+type XmlNamespaces = Record<string, string>;
+type DocxElement = { tag: string; children: unknown[]; namespaces: XmlNamespaces };
+
+function docxElement(node: OrderedXmlNode, inherited: XmlNamespaces): DocxElement | null {
+  const attributes = node[":@"];
+  const namespaces: XmlNamespaces = Object.assign(Object.create(null), inherited);
+  if (attributes && typeof attributes === "object") {
+    for (const [key, value] of Object.entries(attributes)) {
+      if (key === "@_xmlns" && typeof value === "string") namespaces[""] = value;
+      else if (key.startsWith("@_xmlns:") && typeof value === "string") namespaces[key.slice(8)] = value;
+    }
+  }
+  const entry = Object.entries(node).find(([key]) => key !== ":@" && key !== "#text");
+  if (!entry || !Array.isArray(entry[1])) return null;
+  const [qualifiedName, children] = entry;
+  const colon = qualifiedName.indexOf(":");
+  const prefix = colon < 0 ? "" : qualifiedName.slice(0, colon);
+  if (namespaces[prefix] !== WORDPROCESSINGML_NAMESPACE) return null;
+  return { tag: xmlLocalName(qualifiedName), children, namespaces };
+}
+
+function orderedChild(nodes: unknown, name: string, namespaces: XmlNamespaces): DocxElement | undefined {
+  if (!Array.isArray(nodes)) return undefined;
+  for (const node of nodes) {
+    if (!node || typeof node !== "object") continue;
+    if ("#text" in node) continue;
+    const element = docxElement(node as OrderedXmlNode, namespaces);
+    if (element?.tag === name) return element;
+  }
+  return undefined;
+}
+
+function collectDocxParagraphs(nodes: unknown[], paragraphs: string[], namespaces: XmlNamespaces): boolean {
+  for (const node of nodes) {
+    if (!node || typeof node !== "object") continue;
+    if ("#text" in node) continue;
+    const element = docxElement(node as OrderedXmlNode, namespaces);
+    if (!element) return false;
+    const { tag, children } = element;
+    if (tag === "p") {
+      const text = docxParagraphText(children, element.namespaces);
+      if (text === null) return false;
+      paragraphs.push(text);
+    } else if (["tbl", "tr", "tc", "sdt", "sdtContent"].includes(tag)) {
+      if (!collectDocxParagraphs(children, paragraphs, element.namespaces)) return false;
+    } else if (tag !== "sectPr" && tag !== "tblPr" && tag !== "tblGrid" && tag !== "trPr" && tag !== "tcPr") {
+      return false;
+    }
+  }
+  return true;
+}
+
+function docxParagraphText(nodes: unknown, namespaces: XmlNamespaces): string | null {
+  if (!Array.isArray(nodes)) return null;
+  let text = "";
+  for (const node of nodes) {
+    if (!node || typeof node !== "object") continue;
+    if ("#text" in node) continue;
+    const element = docxElement(node as OrderedXmlNode, namespaces);
+    if (!element) return null;
+    const { tag, children } = element;
+    if (["r", "hyperlink", "ins", "smartTag", "sdt", "sdtContent"].includes(tag)) {
+      const value = docxParagraphText(children, element.namespaces);
+      if (value === null) return null;
+      text += value;
+    } else if (tag === "t") {
+      if (children.some((child) => !child || typeof child !== "object" || Object.keys(child).some((key) => key !== "#text"))) return null;
+      text += children.map((child) => (child as OrderedXmlNode)["#text"] || "").join("");
+    } else if (tag === "tab") text += "\t";
+    else if (tag === "br" || tag === "cr") text += "\n";
+    else if (!["pPr", "rPr", "bookmarkStart", "bookmarkEnd", "proofErr", "lastRenderedPageBreak"].includes(tag)) return null;
+  }
+  return text;
 }
 
 async function extractImageSource(name: string, buffer: Buffer): Promise<ExtractedSource> {

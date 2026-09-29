@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, promises as fs } from "node:fs";
 import path from "node:path";
-import { chromium, expect, test, type Page } from "@playwright/test";
+import { chromium, expect, test, type Download, type Page } from "@playwright/test";
 
 const fixturePath = path.resolve(process.cwd(), "fixtures/templates/organizer/VK Tech шаблон.pptx");
 const TEXT_OVERFLOW_MESSAGE = "Text exceeds element bounds";
@@ -104,6 +104,7 @@ async function expectGenerationDiagnostics(page: Page, snapshot: PublishedSnapsh
 async function readPublishedSnapshot(page: Page, jobId: string) {
   const response = await page.request.get(
     new URL(`/api/jobs/${encodeURIComponent(jobId)}`, page.url()).toString(),
+    { timeout: 120_000 },
   );
   expect(response.ok()).toBeTruthy();
   return await response.json() as PublishedSnapshot;
@@ -354,28 +355,83 @@ test.describe("P0 persisted generation job browser E2E", () => {
       auditIssues.filter({ hasText: TEXT_OVERFLOW_MESSAGE }).filter({ hasNotText: /— ignored/u }),
     ).toHaveCount(0);
 
-    const localExportResults: string[] = [];
     const localExportControl = page.locator("header.topbar").getByTestId("export-control");
     await localExportControl.locator(":scope > summary").click();
+    await page.evaluate(() => {
+      const trackedWindow = window as Window & { __editedExportError?: string };
+      const previousFetch = window.fetch.bind(window);
+      window.fetch = async (...args) => {
+        const response = await previousFetch(...args);
+        if (response.url.includes("/api/export") && !response.ok) {
+          trackedWindow.__editedExportError = await response.clone().text();
+        }
+        return response;
+      };
+    });
+    const rejectedExportPromise = page.waitForResponse((response) => (
+      response.url().endsWith("/api/export") && response.request().method() === "POST"
+    ), { timeout: 120_000 });
+    await localExportControl.getByRole("button", { name: "PPTX", exact: true }).click();
+    const rejectedExport = await rejectedExportPromise;
+    expect(rejectedExport.status()).toBe(422);
+    await expect.poll(() => page.evaluate(() => (
+      window as Window & { __editedExportError?: string }
+    ).__editedExportError)).toBeTruthy();
+    const rejectedBody = JSON.parse((await page.evaluate(() => (
+      window as Window & { __editedExportError?: string }
+    ).__editedExportError)) || "null") as {
+      error?: { code?: string; reason?: string; issues?: Array<{ severity?: string; ignored?: boolean }> };
+    };
+    expect(rejectedBody.error?.code).toBe("EXPORT_PREFLIGHT_FAILED");
+    expect(rejectedBody.error?.reason).toBe("AUDIT_ERRORS");
+    expect(rejectedBody.error?.issues?.some((issue) => issue.severity === "error" && !issue.ignored)).toBeTruthy();
+    console.log(`[P0-E2E] rejectedEditedExport=422/${rejectedBody.error?.reason}, issues=${rejectedBody.error?.issues?.length}`);
+
+    // Preflight requires every fatal audit issue to be resolved or explicitly
+    // ignored. Work through the inspector for each slide, including issues
+    // that were previously hidden after the first five entries.
+    const slideThumbnails = page.getByRole("complementary", { name: "Список слайдов" }).locator("button.thumbnail");
+    for (let slideIndex = 0; slideIndex < await slideThumbnails.count(); slideIndex += 1) {
+      await slideThumbnails.nth(slideIndex).click();
+      const pendingErrors = auditSection.locator("li.severity-error").filter({ hasNotText: /— ignored/u });
+      for (let decisionCount = 0; decisionCount < 100; decisionCount += 1) {
+        const before = await pendingErrors.count();
+        if (before === 0) break;
+        await pendingErrors.first().getByRole("button", { name: "Игнорировать", exact: true }).click();
+        await expect.poll(() => pendingErrors.count()).toBeLessThan(before);
+      }
+      await expect(pendingErrors).toHaveCount(0);
+    }
+    await expect(page.getByTestId("audit-count")).toHaveClass(/audit-ok/u);
+
+    const localExportResults: string[] = [];
     for (const format of formats) {
       await expect(localExportControl.getByRole("button", { name: format.label, exact: true })).toBeVisible();
     }
     for (const format of formats) {
       const endpoint = format.id === "pptx" ? "/api/export" : `/api/export/${format.id}`;
+      await page.evaluate(() => {
+        (window as Window & { __editedExportError?: string }).__editedExportError = undefined;
+      });
       const exportRequestPromise = page.waitForRequest((request) => (
         request.url().endsWith(endpoint) && request.method() === "POST"
       ), { timeout: 120_000 });
       const exportResponsePromise = page.waitForResponse((response) => (
         response.url().endsWith(endpoint) && response.request().method() === "POST"
       ), { timeout: 120_000 });
-      const downloadPromise = page.waitForEvent("download", { timeout: 120_000 });
-      const [download, exportResponse, exportRequest] = await Promise.all([
-        downloadPromise,
+      const downloadPromise = new Promise<Download>((resolve) => page.once("download", resolve));
+      await localExportControl.getByRole("button", { name: format.label, exact: true }).click();
+      const [exportResponse, exportRequest] = await Promise.all([
         exportResponsePromise,
         exportRequestPromise,
-        localExportControl.getByRole("button", { name: format.label, exact: true }).click(),
       ]);
-      expect(exportResponse.ok()).toBeTruthy();
+      if (!exportResponse.ok()) {
+        const responseBody = await page.evaluate(() => (
+          window as Window & { __editedExportError?: string }
+        ).__editedExportError);
+        throw new Error(`Edited ${format.id} export returned ${exportResponse.status()}: ${responseBody || "body unavailable"}`);
+      }
+      const download = await downloadPromise;
       const exportByteLength = Number(exportResponse.headers()["content-length"] || 0);
       expect(exportByteLength).toBeGreaterThan(0);
       expect(exportResponse.headers()["x-vk-hackathon-artifact-path"]).toBeUndefined();
@@ -413,7 +469,44 @@ test.describe("P0 persisted generation job browser E2E", () => {
       localExportResults.push(`${format.id}: local document, ${downloadSize} bytes (content-length ${exportByteLength})`);
     }
 
+    // Keep Balanced locally edited while exporting the untouched Visual sibling.
+    // The sibling must still use its published job artifact, not the draft body.
+    const visualTab = page.getByRole("tab", { name: /Visual/u });
+    await visualTab.click();
+    await expect(visualTab).toHaveAttribute("aria-selected", "true");
+    const siblingRequestPromise = page.waitForRequest((request) => (
+      request.url().endsWith("/api/export/html") && request.method() === "POST"
+    ), { timeout: 120_000 });
+    const siblingResponsePromise = page.waitForResponse((response) => (
+      response.url().endsWith("/api/export/html") && response.request().method() === "POST"
+    ), { timeout: 120_000 });
+    const siblingDownloadPromise = page.waitForEvent("download", { timeout: 120_000 });
+    await localExportControl.getByRole("button", { name: "HTML", exact: true }).click();
+    const [siblingRequest, siblingResponse, siblingDownload] = await Promise.all([
+      siblingRequestPromise,
+      siblingResponsePromise,
+      siblingDownloadPromise,
+    ]);
+    expect(siblingResponse.ok()).toBeTruthy();
+    expect(siblingRequest.postDataJSON()).toEqual({ jobId: generationJobId, variant: "visual" });
+    const siblingArtifactPath = siblingResponse.headers()["x-vk-hackathon-artifact-path"];
+    expect(siblingArtifactPath).toBe("exports/visual/html.html");
+    const siblingArtifactResponse = await page.request.get(new URL(
+      `/api/artifacts/${encodeURIComponent(generationJobId!)}/${siblingArtifactPath}`,
+      page.url(),
+    ).toString());
+    expect(siblingArtifactResponse.ok()).toBeTruthy();
+    const siblingDownloadPath = testInfo.outputPath("downloads", "published-visual-while-balanced-edited.html");
+    await fs.mkdir(path.dirname(siblingDownloadPath), { recursive: true });
+    await siblingDownload.saveAs(siblingDownloadPath);
+    expect(await fs.readFile(siblingDownloadPath)).toEqual(await siblingArtifactResponse.body());
+    await balancedTab.click();
+    await expect(balancedTab).toHaveAttribute("aria-selected", "true");
+    await slideThumbnails.first().click();
+    await expect(page.getByRole("textbox", { name: "Редактируемый текст" }).first()).toHaveValue(overflowingText);
+
     const localDraft = "Локальный черновик не должен быть восстановлен";
+    await slideThumbnails.first().click();
     await editableText.fill(localDraft);
     await expect(editableText).toHaveValue(localDraft);
     await expect(page.getByTestId("save-status")).toContainText("Сохранено локально");

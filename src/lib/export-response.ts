@@ -26,7 +26,11 @@ export function createExportResponse(
   contentType: string,
   filename: string,
 ) {
-  const bytes = typeof body === "string" ? new TextEncoder().encode(body) : Uint8Array.from(body);
+  // Response accepts an ArrayBuffer view. Keep the existing bytes instead of
+  // copying a potentially large PPTX once more before handing it to Next.
+  const bytes = typeof body === "string"
+    ? new TextEncoder().encode(body)
+    : new Uint8Array(body.buffer as ArrayBuffer, body.byteOffset, body.byteLength);
   return new NextResponse(bytes, {
     headers: {
       "content-type": contentType,

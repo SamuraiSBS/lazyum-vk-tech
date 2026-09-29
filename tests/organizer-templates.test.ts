@@ -21,6 +21,12 @@ describe("Organizer PPTX templates", () => {
     expect(design.slideSize.height).toBeGreaterThan(0);
     expect(design.layouts.length).toBeGreaterThan(0);
     expect(design.layouts.some((layout) => layout.elements.length > 0)).toBe(true);
+    const grouped = design.layouts.flatMap((layout) => layout.elements)
+      .filter((element) => element.type === "group");
+    expect(grouped.length).toBeGreaterThan(0);
+    expect(grouped.every((element) => element.sourceFile?.startsWith("ppt/") &&
+      [element.x, element.y, element.w, element.h].every(Number.isFinite) &&
+      element.w > 0 && element.h > 0)).toBe(true);
     expect(design.evidence?.colors.every((entry) => entry.sources.length > 0)).toBe(true);
     expect(design.relationships?.every((relationship) => relationship.relationshipFile.endsWith(".rels"))).toBe(true);
   });

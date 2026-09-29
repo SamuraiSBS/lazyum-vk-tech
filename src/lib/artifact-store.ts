@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import JSZip from "jszip";
 import {
   artifactManifestSchema,
   auditReportSchema,
@@ -10,6 +11,7 @@ import {
   type ArtifactInput,
   type InputSourceArtifact,
   type ArtifactReference,
+  type TemplateImageArtifact,
   type ArtifactManifest,
   type ArtifactReferences,
   type AuditReport,
@@ -87,6 +89,7 @@ export function exportRelativePath(variant: LayoutVariant, format: ExportFormat)
 
 const EMPTY_ARTIFACT_REFERENCES: ArtifactReferences = {
   parsed: null,
+  templateImages: [],
   renderEvidence: null,
   renders: null,
   planning: null,
@@ -103,6 +106,28 @@ export function getArtifactRoot() {
 
 export function sha256(buffer: Buffer) {
   return createHash("sha256").update(buffer).digest("hex");
+}
+
+function imageMimeFromTarget(target: string): TemplateImageArtifact["mimeType"] | undefined {
+  const extension = target.split(".").pop()?.toLowerCase();
+  if (extension === "png") return "image/png";
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "gif") return "image/gif";
+  if (extension === "svg") return "image/svg+xml";
+  return undefined;
+}
+
+function mimeExtension(mime: TemplateImageArtifact["mimeType"]) {
+  return mime === "image/jpeg" ? "jpg" : mime.split("/")[1].replace("svg+xml", "svg");
+}
+
+function dataUrlDigest(url: string, mime: string) {
+  const prefix = `data:${mime};base64,`;
+  if (!url.startsWith(prefix)) return undefined;
+  const encoded = url.slice(prefix.length);
+  if (!encoded || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) return undefined;
+  const bytes = Buffer.from(encoded, "base64");
+  return bytes.toString("base64") === encoded ? sha256(bytes) : undefined;
 }
 
 export class ArtifactStore {
@@ -122,7 +147,7 @@ export class ArtifactStore {
       relativePath: ARTIFACT_RELATIVE_PATHS.template,
     };
     const manifest = artifactManifestSchema.parse({
-      version: 1,
+      version: 2,
       jobId,
       status: "analyzing",
       createdAt: now,
@@ -163,14 +188,62 @@ export class ArtifactStore {
 
   async saveDesignSystem(jobId: string, designSystem: DesignSystem) {
     const parsedDesignSystem = designSystemSchema.parse(designSystem);
+    const manifest = await this.readManifest(jobId);
+    const templateBytes = await readFile(this.jobPath(jobId, manifest.inputs.template.relativePath));
+    if (sha256(templateBytes) !== manifest.inputs.template.sha256 || templateBytes.byteLength !== manifest.inputs.template.byteSize) {
+      throw new Error("Template input failed integrity validation");
+    }
+    const imageArtifacts = await this.persistTemplateImages(jobId, templateBytes, parsedDesignSystem);
     const contents = jsonBuffer(parsedDesignSystem);
     await writeAtomic(this.jobPath(jobId, ARTIFACT_RELATIVE_PATHS.parsedDesignSystem), contents);
-    const manifest = await this.readManifest(jobId);
     return this.writeManifest({
       ...manifest,
       updatedAt: new Date().toISOString(),
-      artifacts: { ...manifest.artifacts, parsed: artifactReference(ARTIFACT_RELATIVE_PATHS.parsedDesignSystem, contents) },
+      artifacts: { ...manifest.artifacts, parsed: artifactReference(ARTIFACT_RELATIVE_PATHS.parsedDesignSystem, contents), templateImages: imageArtifacts },
     });
+  }
+
+  private async persistTemplateImages(jobId: string, templateBytes: Buffer, design: DesignSystem): Promise<TemplateImageArtifact[]> {
+    const allowed = (design.imageAssets ?? []).filter((asset) => asset.allowed);
+    if (!allowed.length) return [];
+    const zip = await JSZip.loadAsync(templateBytes);
+    const saved = new Set<string>();
+    const artifacts: TemplateImageArtifact[] = [];
+    for (const asset of allowed) {
+      const mimeType = imageMimeFromTarget(asset.target);
+      const entry = zip.file(asset.target);
+      if (!mimeType || !entry || !/^ppt\/media\/[A-Za-z0-9_.-]+$/.test(asset.target)) {
+        throw new Error("Template image relationship has an unsupported media target");
+      }
+      const bytes = await entry.async("nodebuffer");
+      const digest = sha256(bytes);
+      if (bytes.byteLength !== asset.byteSize || digest !== asset.sha256) {
+        throw new Error("Template image bytes differ from parsed relationship evidence");
+      }
+      const relativePath = `parsed/template-images/${digest}.${mimeExtension(mimeType)}`;
+      if (!saved.has(relativePath)) {
+        const assetPath = this.jobPath(jobId, relativePath);
+        try {
+          const existing = await readFile(assetPath);
+          if (sha256(existing) !== digest || existing.length !== bytes.length) {
+            throw new Error("Immutable template image asset differs from source bytes");
+          }
+        } catch (error) {
+          if (!isMissingFileError(error)) throw error;
+          await writeAtomic(assetPath, bytes);
+        }
+        saved.add(relativePath);
+      }
+      const placements = design.layouts.flatMap((layout) => layout.elements
+        .filter((element) => element.type === "image" && element.sourceFile === asset.sourceFile
+          && element.relationshipId === asset.relationshipId)
+        .map((element) => ({ layoutId: layout.id, sourceElementId: element.id,
+          ...(element.crop ? { crop: element.crop } : {}),
+          ...(element.rotation ? { rotation: element.rotation } : {}) })));
+      artifacts.push({ ...artifactReference(relativePath, bytes), mimeType, target: asset.target,
+        sourceFile: asset.sourceFile, relationshipId: asset.relationshipId, sources: asset.sources, placements });
+    }
+    return artifacts;
   }
 
   async savePlanning(jobId: string, normalizedContent: NormalizedContent, presentationPlan: PresentationPlan) {
@@ -204,13 +277,13 @@ export class ArtifactStore {
 
   async saveVariants(jobId: string, presentations: Record<LayoutVariant, PresentationDocument>) {
     const references = emptyVariantReferences();
-    await Promise.all((Object.keys(references) as LayoutVariant[]).map(async (variant) => {
+    for (const variant of Object.keys(references) as LayoutVariant[]) {
       const parsedPresentation = presentationDocumentSchema.parse(presentations[variant]);
       const relativePath = variantRelativePath(variant);
       const contents = jsonBuffer(parsedPresentation);
       await writeAtomic(this.jobPath(jobId, relativePath), contents);
       references[variant] = artifactReference(relativePath, contents);
-    }));
+    }
     const manifest = await this.readManifest(jobId);
     return this.writeManifest({
       ...manifest,
@@ -220,9 +293,13 @@ export class ArtifactStore {
   }
 
   async saveExport(jobId: string, variant: LayoutVariant, format: ExportFormat, contents: Buffer | Uint8Array) {
-    const bytes = Buffer.from(contents);
+    const bytes = Buffer.isBuffer(contents)
+      ? contents
+      : Buffer.from(contents.buffer, contents.byteOffset, contents.byteLength);
     if (bytes.byteLength <= 0) throw new Error("Export contents are empty");
     const manifest = await this.readManifest(jobId);
+    if (manifest.status !== "ready") throw new ArtifactGenerationJobNotReadyError("Generation job is not ready");
+    await this.validateTemplateImages(jobId, manifest);
     const relativePath = exportRelativePath(variant, format);
     await writeAtomic(this.jobPath(jobId, relativePath), bytes);
     const reference = artifactReference(relativePath, bytes);
@@ -426,6 +503,7 @@ export class ArtifactStore {
     if (!manifest.artifacts.renderEvidence || !manifest.artifacts.renders) {
       throw new Error("Render evidence was not saved");
     }
+    await this.validateTemplateImages(jobId, manifest);
     return this.writeManifest({
       ...manifest,
       status: "ready",
@@ -442,6 +520,7 @@ export class ArtifactStore {
       throw new Error("Generation artifacts were not saved");
     }
     const saved = await this.readGenerationArtifactsForJury(jobId);
+    await this.validateTemplateImages(jobId, manifest, Object.values(saved.variants));
     const [ranking, stageTrace] = await Promise.all([
       this.readPublishedJsonArtifact(jobId, manifest, manifest.artifacts.orchestration.ranking, publishedVariantRankingSchema),
       this.readPublishedJsonArtifact(jobId, manifest, manifest.artifacts.orchestration.stageTrace, generationStageTraceSchema),
@@ -510,9 +589,11 @@ export class ArtifactStore {
     if (!reference) throw new ArtifactNotFoundError("Variant artifact is not published in the job manifest");
     const artifact = await this.readPublishedArtifactFromManifest(jobId, manifest, reference.relativePath);
     try {
+      const document = presentationDocumentSchema.parse(JSON.parse(artifact.contents.toString("utf8")));
+      await this.validateTemplateImages(jobId, manifest, [document]);
       return {
         manifest,
-        document: presentationDocumentSchema.parse(JSON.parse(artifact.contents.toString("utf8"))),
+        document,
       };
     } catch {
       throw new ArtifactNotFoundError("Variant artifact is not a valid presentation document");
@@ -544,6 +625,7 @@ export class ArtifactStore {
         this.readPublishedJsonArtifact(jobId, manifest, orchestration.stageTrace, generationStageTraceSchema),
       ]);
       const presentations = { compact, balanced, visual };
+      await this.validateTemplateImages(jobId, manifest, Object.values(presentations));
       const audits = { compact: compactAudit, balanced: balancedAudit, visual: visualAudit };
       if (Object.values(audits).some((audit) => !audit.passed)) {
         throw new ArtifactIncompleteGenerationJobError("Ready job contains a failed deterministic audit");
@@ -597,6 +679,65 @@ export class ArtifactStore {
       throw new ArtifactNotFoundError("Artifact contents do not match the published manifest reference");
     }
     return { relativePath: requestedPath, contents };
+  }
+
+  private async validateTemplateImages(jobId: string, manifest: ArtifactManifest, documents: PresentationDocument[] = []) {
+    if (!manifest.artifacts.parsed) throw new Error("Template design artifact is missing");
+    const design = await this.readPublishedJsonArtifact(jobId, manifest, manifest.artifacts.parsed, designSystemSchema);
+    const expected = (design.imageAssets ?? []).filter((asset) => asset.allowed);
+    const artifacts = manifest.artifacts.templateImages;
+    // Version 1 jobs were published before per-image artifacts existed. Their
+    // parsed design and published variants still carry the original media.
+    if (manifest.version === 1 && artifacts.length === 0) return;
+    if (artifacts.length !== expected.length) throw new Error("Template image artifact graph is incomplete");
+    const byRelationship = new Map<string, TemplateImageArtifact>();
+    for (const artifact of artifacts) {
+      const key = `${artifact.sourceFile}|${artifact.relationshipId}|${artifact.target}`;
+      if (byRelationship.has(key)) throw new Error("Template image relationship is duplicated");
+      const evidence = expected.find((asset) => `${asset.sourceFile}|${asset.relationshipId}|${asset.target}` === key);
+      if (!evidence || evidence.sha256 !== artifact.sha256 || evidence.byteSize !== artifact.byteSize
+        || artifact.mimeType !== imageMimeFromTarget(artifact.target)
+        || artifact.relativePath !== `parsed/template-images/${artifact.sha256}.${mimeExtension(artifact.mimeType)}`) {
+        throw new Error("Template image artifact graph differs from parser evidence");
+      }
+      const expectedPlacements = design.layouts.flatMap((layout) => layout.elements
+        .filter((element) => element.type === "image" && element.sourceFile === artifact.sourceFile
+          && element.relationshipId === artifact.relationshipId)
+        .map((element) => ({ layoutId: layout.id, sourceElementId: element.id,
+          ...(element.crop ? { crop: element.crop } : {}),
+          ...(element.rotation ? { rotation: element.rotation } : {}) })));
+      if (JSON.stringify(artifact.placements) !== JSON.stringify(expectedPlacements)) {
+        throw new Error("Template image placement graph differs from parsed design");
+      }
+      const bytes = (await this.readPublishedArtifactFromManifest(jobId, manifest, artifact.relativePath)).contents;
+      if (bytes.length !== artifact.byteSize || sha256(bytes) !== artifact.sha256) {
+        throw new Error("Template image asset failed integrity validation");
+      }
+      byRelationship.set(key, artifact);
+    }
+    const placements = new Map<string, { sha256: string; crop: unknown; rotation: unknown }[]>();
+    for (const layout of design.layouts) for (const element of layout.elements) {
+      if (element.type !== "image" || !element.imageDataUrl) continue;
+      if (!element.relationshipId || !element.sourceFile) throw new Error("Template image placement has no relationship provenance");
+      const artifact = artifacts.find((item) => item.sourceFile === element.sourceFile && item.relationshipId === element.relationshipId);
+      if (!artifact || dataUrlDigest(element.imageDataUrl, artifact.mimeType) !== artifact.sha256) {
+        throw new Error("Template image placement differs from its saved asset");
+      }
+      const key = JSON.stringify([layout.id, element.id]);
+      placements.set(key, [...(placements.get(key) ?? []), {
+        sha256: artifact.sha256, crop: element.crop, rotation: element.rotation,
+      }]);
+    }
+    for (const document of documents) for (const slide of document.slides) for (const element of slide.canvas.elements) {
+      if (element.type !== "image" || !element.sourceTemplateElementId) continue;
+      const candidates = placements.get(JSON.stringify([slide.templateLayoutId, element.sourceTemplateElementId])) ?? [];
+      if (!element.dataUrl || !candidates.some((placement) => artifacts.some((asset) => asset.sha256 === placement.sha256
+        && dataUrlDigest(element.dataUrl!, asset.mimeType) === asset.sha256)
+        && JSON.stringify(element.crop) === JSON.stringify(placement.crop)
+        && element.rotation === placement.rotation)) {
+        throw new Error("Published image placement differs from template asset, crop or rotation");
+      }
+    }
   }
 
   private async readPublishedJsonArtifact<T>(
@@ -792,6 +933,7 @@ function publishedArtifactPaths(manifest: ArtifactManifest) {
     if (reference) paths.add(reference.relativePath);
   };
   addReference(manifest.artifacts.parsed);
+  manifest.artifacts.templateImages.forEach(addReference);
   addReference(manifest.artifacts.renderEvidence);
   addReference(manifest.artifacts.renders?.pdf || null);
   manifest.artifacts.renders?.slides.forEach((slide) => paths.add(slide.relativePath));
@@ -811,6 +953,7 @@ function publishedArtifactReferences(manifest: ArtifactManifest) {
   };
   addReference(manifest.inputs.template);
   addReference(manifest.artifacts.parsed);
+  manifest.artifacts.templateImages.forEach(addReference);
   addReference(manifest.artifacts.renderEvidence);
   addReference(manifest.artifacts.renders?.pdf || null);
   manifest.artifacts.renders?.slides.forEach(addReference);

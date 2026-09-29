@@ -115,6 +115,7 @@ export const templateElementSchema = z.object({
   relationshipId: z.string().optional(),
   imageDataUrl: z.string().optional(),
   crop: canvasImageCropSchema.optional(),
+  rotation: z.number().finite().min(0).lt(360).optional(),
   inheritedFrom: z.string().optional(),
   sourceFile: z.string().min(1).optional(),
   zIndex: z.number().int().nonnegative(),
@@ -138,6 +139,8 @@ export const templateLayoutSchema = z.object({
   cardCount: z.number().int().nonnegative(),
   composition: z.enum(["title", "split", "cards", "timeline", "visual", "text", "blank"]),
   recurringElementIds: z.array(z.string()),
+  confidence: z.number().finite().min(0).max(1).optional(),
+  parserWarnings: z.array(z.string()).max(50).optional(),
 });
 export type TemplateLayout = z.infer<typeof templateLayoutSchema>;
 
@@ -206,6 +209,21 @@ export const artifactReferenceSchema = z.object({
   sha256: sha256Schema,
 });
 export type ArtifactReference = z.infer<typeof artifactReferenceSchema>;
+
+export const templateImageArtifactSchema = artifactReferenceSchema.extend({
+  mimeType: z.enum(["image/png", "image/jpeg", "image/gif", "image/svg+xml"]),
+  target: z.string().regex(/^ppt\/media\/[A-Za-z0-9_.-]+$/),
+  sourceFile: z.string().min(1),
+  relationshipId: z.string().min(1),
+  sources: z.array(evidenceSourceSchema).min(1),
+  placements: z.array(z.object({
+    layoutId: z.string().min(1),
+    sourceElementId: z.string().min(1),
+    crop: canvasImageCropSchema.optional(),
+    rotation: z.number().finite().min(0).lt(360).optional(),
+  })).max(5000),
+});
+export type TemplateImageArtifact = z.infer<typeof templateImageArtifactSchema>;
 
 const agentRenderVariantSchema = z.enum(["compact", "balanced", "visual"]);
 const agentRenderRefSchema = artifactReferenceSchema.extend({
@@ -387,6 +405,7 @@ export type RenderArtifactReferences = z.infer<typeof renderArtifactReferencesSc
 
 export const artifactReferencesSchema = z.object({
   parsed: artifactReferenceSchema.nullable(),
+  templateImages: z.array(templateImageArtifactSchema).max(5000).default([]),
   renderEvidence: artifactReferenceSchema.nullable(),
   renders: renderArtifactReferencesSchema.nullable(),
   planning: artifactReferenceSchema.nullable(),
@@ -471,7 +490,7 @@ export const skillVersionsSchema = z.record(z.string().min(1).max(120), z.string
 export type SkillVersions = z.infer<typeof skillVersionsSchema>;
 
 export const artifactManifestSchema = z.object({
-  version: z.literal(1),
+  version: z.union([z.literal(1), z.literal(2)]),
   jobId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, "Expected a safe artifact job id"),
   status: artifactJobStatusSchema,
   createdAt: z.string().datetime({ offset: true }),
@@ -885,6 +904,7 @@ export const canvasImageSchema = z.object({
   alt: z.string().default(""),
   dataUrl: z.string().optional(),
   crop: canvasImageCropSchema.optional(),
+  rotation: z.number().finite().min(0).lt(360).optional(),
   zIndex: z.number().int().nonnegative(),
   locked: z.boolean().default(false),
   sourceTemplateElementId: z.string().optional(),

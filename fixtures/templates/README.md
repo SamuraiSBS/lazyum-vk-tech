@@ -1,6 +1,6 @@
 # Generated test templates
 
-Run `npm run fixtures` to create the deterministic synthetic PPTX inputs used by
-local tests. The generated `.pptx` files are ignored by Git so the repository
-stays text-based; regenerate them before running tests that consume these
-fixtures.
+Run npm run fixtures to create two small deterministic PPTX templates in this
+directory: a bright card system and a dark card system. They are generated from
+source so the repository remains text-only while the parser is still exercised
+against multiple real Office packages.

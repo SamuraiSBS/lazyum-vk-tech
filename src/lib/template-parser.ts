@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import { XMLParser } from "fast-xml-parser";
 import {
+  canvasImageCropSchema,
   designSystemSchema,
   type DesignSystem,
   type EvidenceSource,
@@ -23,8 +24,19 @@ const xmlParser = new XMLParser({
   parseTagValue: false,
   parseAttributeValue: false,
 });
+const orderedXmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  preserveOrder: true,
+  processEntities: false,
+  parseTagValue: false,
+  parseAttributeValue: false,
+});
+const elementOrder = Symbol("elementOrder");
 
 type ParsedXml = Record<string, unknown>;
+type GroupTransform = { sx: number; sy: number; tx: number; ty: number };
+const identityGroupTransform: GroupTransform = { sx: 1, sy: 1, tx: 0, ty: 0 };
 type EvidenceRecord<T> = {
   value: T;
   confidence: number;
@@ -68,6 +80,7 @@ type BackgroundToken = {
 };
 type InternalTemplateLayout = TemplateLayout & {
   elements: InternalTemplateElement[];
+  __showMasterShapes: boolean;
   __directBackground?: BackgroundToken;
   __effectiveBackground?: BackgroundToken;
 };
@@ -124,14 +137,23 @@ export async function parsePptxTemplate(
   const layoutsByFile = new Map(parsedLayouts.map((layout) => [layout.sourceFile, layout]));
   parsedLayouts.forEach((layout) => {
     const master = layout.masterSourceFile ? mastersByFile.get(layout.masterSourceFile) : undefined;
-    if (master) layout.elements = mergeInheritedElements(master.elements, layout.elements, master.sourceFile);
+    if (master) layout.elements = mergeInheritedElements(
+      layout.__showMasterShapes ? master.elements : master.elements.filter(isPlaceholder),
+      layout.elements,
+      master.sourceFile,
+    );
     refreshLayoutMetrics(layout);
   });
   parsedSlides.forEach((slide) => {
     const baseLayout = slide.layoutSourceFile ? layoutsByFile.get(slide.layoutSourceFile) : undefined;
     if (baseLayout) {
       slide.masterSourceFile = baseLayout.masterSourceFile;
-      slide.elements = mergeInheritedElements(baseLayout.elements, slide.elements, baseLayout.sourceFile);
+      const baseElements = baseLayout.elements as InternalTemplateElement[];
+      const inherited = slide.__showMasterShapes
+        ? baseElements
+        : baseElements.filter((element) =>
+          element.sourceFile !== slide.masterSourceFile || isPlaceholder(element));
+      slide.elements = mergeInheritedElements(inherited, slide.elements, baseLayout.sourceFile);
     }
     refreshLayoutMetrics(slide);
   });
@@ -197,6 +219,15 @@ export async function parsePptxTemplate(
     .slice(0, 24);
   const finalBackgroundEvidence = consolidateEvidence(backgroundEvidence).slice(0, 80);
   const recurringElements = extractRecurringElements(layouts);
+  const parserWarnings = unique(warnings).sort();
+  for (const layout of layouts) {
+    const chain = [layout.sourceFile, layout.layoutSourceFile, layout.masterSourceFile]
+      .filter((sourceFile): sourceFile is string => Boolean(sourceFile));
+    layout.parserWarnings = parserWarnings.filter((warning) =>
+      chain.some((sourceFile) => warningBelongsToSource(warning, sourceFile)),
+    ).slice(0, 50);
+    layout.confidence = layoutConfidence(layout);
+  }
 
   return designSystemSchema.parse({
     version: 1,
@@ -244,7 +275,7 @@ export async function parsePptxTemplate(
     },
     relationships: uniqueRelationships(relationships),
     imageAssets: uniqueImageAssets(imageAssets),
-    warnings: unique(warnings).sort().slice(0, 200),
+    warnings: parserWarnings.slice(0, 200),
   });
 }
 
@@ -256,7 +287,7 @@ async function extractMaster(
   warnings: string[],
 ): Promise<ParsedMaster> {
   const document = await readXml(zip, sourceFile, warnings);
-  const elements = document ? extractElements(document, slideSize, theme, sourceFile) : [];
+  const elements = document ? extractElements(document, slideSize, theme, sourceFile, warnings) : [];
   const background = document ? extractBackground(document, sourceFile, theme, warnings) : undefined;
   const name = firstString(findFirst(document, "p:cSld"), "@_name") || basename(sourceFile);
   return { sourceFile, name, elements, background };
@@ -316,11 +347,12 @@ async function extractTemplateLayout(
       name: basename(sourceFile),
       source,
       sourceFile,
+      __showMasterShapes: true,
       background: undefined,
     };
     return layout;
   }
-  const elements = extractElements(document, slideSize, theme, sourceFile);
+  const elements = extractElements(document, slideSize, theme, sourceFile, warnings);
   const background = extractBackground(document, sourceFile, theme, warnings);
   const textSlots = elements.filter((element) => element.type === "text" || element.type === "placeholder").length;
   const placeholderCount = elements.filter((element) => element.type === "placeholder").length;
@@ -333,6 +365,7 @@ async function extractTemplateLayout(
     name: name || (source === "layout" ? "Layout " : "Slide ") + index,
     source,
     sourceFile,
+    __showMasterShapes: showMasterShapes(document, source),
     width: slideSize.width,
     height: slideSize.height,
     background: background?.value,
@@ -346,6 +379,12 @@ async function extractTemplateLayout(
   };
   layout.__directBackground = background;
   return layout;
+}
+
+function showMasterShapes(document: ParsedXml, source: "layout" | "slide") {
+  const root = asRecord(document[source === "slide" ? "p:sld" : "p:sldLayout"]);
+  const flag = firstString(root, "@_showMasterSp")?.toLowerCase();
+  return flag !== "0" && flag !== "false";
 }
 
 function extractSlideSize(document: ParsedXml | undefined, warnings: string[]) {
@@ -365,47 +404,80 @@ function extractElements(
   slideSize: { width: number; height: number },
   theme: ThemeTokens,
   sourceFile: string,
+  warnings: string[],
 ) {
   const root = findFirst(document, "p:spTree");
   if (!root) return [];
   const elements: InternalTemplateElement[] = [];
   let zIndex = 0;
-  const walk = (value: unknown) => {
+  const walk = (value: unknown, parent: GroupTransform = identityGroupTransform, insideGroup = false) => {
     if (Array.isArray(value)) {
-      value.forEach(walk);
+      value.forEach((item) => walk(item, parent, insideGroup));
       return;
     }
     const record = asRecord(value);
     if (!record) return;
     for (const [key, child] of Object.entries(record)) {
       if (key === "p:sp") {
-        for (const shape of asArray(child)) elements.push(extractShape(shape, "shape", zIndex++, slideSize, theme, sourceFile));
+        for (const shape of asArray(child)) {
+          const element = extractShape(shape, "shape", zIndex++, slideSize, theme, sourceFile, parent, insideGroup);
+          if (element) elements.push(element);
+        }
         continue;
       }
       if (key === "p:pic") {
-        for (const picture of asArray(child)) elements.push(extractShape(picture, "image", zIndex++, slideSize, theme, sourceFile));
+        for (const picture of asArray(child)) {
+          const element = extractShape(picture, "image", zIndex++, slideSize, theme, sourceFile, parent, insideGroup);
+          if (element) elements.push(element);
+        }
         continue;
       }
       if (key === "p:cxnSp") {
-        for (const line of asArray(child)) elements.push(extractShape(line, "line", zIndex++, slideSize, theme, sourceFile));
+        for (const line of asArray(child)) {
+          const element = extractShape(line, "line", zIndex++, slideSize, theme, sourceFile, parent, insideGroup);
+          if (element) elements.push(element);
+        }
         continue;
       }
       if (key === "p:graphicFrame") {
-        for (const frame of asArray(child)) elements.push(extractGraphicFrame(frame, zIndex++, slideSize, theme, sourceFile));
+        for (const frame of asArray(child)) {
+          const element = extractGraphicFrame(frame, zIndex++, slideSize, theme, sourceFile, parent, insideGroup);
+          if (element) elements.push(element);
+        }
         continue;
       }
       if (key === "p:grpSp") {
         for (const group of asArray(child)) {
-          elements.push(extractShape(group, "group", zIndex++, slideSize, theme, sourceFile));
-          walk(group);
+          const groupId = firstString(findFirst(asRecord(group)?.["p:nvGrpSpPr"], "p:cNvPr"), "@_id") || "unknown";
+          const transform = asRecord(asRecord(group)?.["p:grpSpPr"])?.["a:xfrm"];
+          const local = parseGroupTransform(transform);
+          if (!local) {
+            warnings.push(`Unsupported group transform: sourceFile=${sourceFile}; elementId=${groupId}; missing or degenerate geometry`);
+            continue;
+          }
+          const transformRecord = asRecord(transform);
+          if (hasGroupRotationOrFlip(transformRecord)) {
+            warnings.push(`Unsupported group rotation/flip: sourceFile=${sourceFile}; elementId=${groupId}`);
+            continue;
+          }
+          const element = extractShape(group, "group", zIndex++, slideSize, theme, sourceFile, parent, insideGroup);
+          if (element) elements.push(element);
+          walk(group, composeGroupTransforms(parent, local), true);
         }
         continue;
       }
-      walk(child);
+      walk(child, parent, insideGroup);
     }
   };
   walk(root);
-  return elements.filter((element) => element.w > 0 && element.h > 0);
+  const retained = elements.filter((element) => element.w > 0 && element.h > 0);
+  const order = (document as ParsedXml & { [elementOrder]?: string[] })[elementOrder];
+  if (!order?.length) return retained;
+  const rank = new Map(order.map((id, index) => [id, index]));
+  retained.sort((left, right) => (rank.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+    (rank.get(right.id) ?? Number.MAX_SAFE_INTEGER) || left.zIndex - right.zIndex);
+  retained.forEach((element, index) => { element.zIndex = index; });
+  return retained;
 }
 
 function extractShape(
@@ -415,30 +487,49 @@ function extractShape(
   slideSize: { width: number; height: number },
   theme: ThemeTokens,
   sourceFile: string,
-): InternalTemplateElement {
-  const cNvPr = findFirst(value, "p:cNvPr");
-  const transform = findFirst(value, "a:xfrm");
+  parent: GroupTransform = identityGroupTransform,
+  insideGroup = false,
+): InternalTemplateElement | undefined {
+  const cNvPr = fallbackType === "group"
+    ? findFirst(asRecord(value)?.["p:nvGrpSpPr"], "p:cNvPr")
+    : findFirst(value, "p:cNvPr");
+  const transform = fallbackType === "group"
+    ? asRecord(asRecord(value)?.["p:grpSpPr"])?.["a:xfrm"]
+    : findFirst(value, "a:xfrm");
   const off = asRecord(transform)?.["a:off"];
   const ext = asRecord(transform)?.["a:ext"];
+  if (insideGroup && (!hasNumericAttribute(asRecord(off), "@_x") ||
+    !hasNumericAttribute(asRecord(off), "@_y") ||
+    !hasNumericAttribute(asRecord(ext), "@_cx") ||
+    !hasNumericAttribute(asRecord(ext), "@_cy") ||
+    numberAttribute(ext, "@_cx") <= 0 || numberAttribute(ext, "@_cy") <= 0)) return undefined;
+  const x = numberAttribute(off, "@_x");
+  const y = numberAttribute(off, "@_y");
+  const w = numberAttribute(ext, "@_cx");
+  const h = numberAttribute(ext, "@_cy");
   const geometry = normalizeGeometry(
-    numberAttribute(off, "@_x"),
-    numberAttribute(off, "@_y"),
-    numberAttribute(ext, "@_cx"),
-    numberAttribute(ext, "@_cy"),
+    parent.sx * x + parent.tx,
+    parent.sy * y + parent.ty,
+    parent.sx * w,
+    parent.sy * h,
     slideSize,
   );
-  const placeholder = findFirst(value, "p:ph");
+  const placeholder = fallbackType === "group" ? undefined : findFirst(value, "p:ph");
   const placeholderIndex = firstString(placeholder, "@_idx");
-  const text = collectText(value).join("\n").trim();
-  const textProps = findTextProps(value);
-  const elementType = placeholder
+  const text = fallbackType === "group" ? "" : collectText(value).join("\n").trim();
+  const textProps = fallbackType === "group" ? { fontFamily: undefined, fontSize: undefined, fontWeight: undefined, hasExplicitFontWeight: false } : findTextProps(value);
+  const elementType = fallbackType === "group"
+    ? "group"
+    : placeholder
     ? "placeholder"
     : findFirst(value, "p:txBody")
       ? "text"
       : fallbackType;
   const shapeName = firstString(cNvPr, "@_name") || firstString(cNvPr, "@_id") || fallbackType + "-" + zIndex;
-  const radius = /roundRect|round/i.test(String(findFirst(value, "@_prst") || "")) ? Math.min(geometry.w, geometry.h) * 0.08 : undefined;
+  const radius = fallbackType !== "group" && /roundRect|round/i.test(String(findFirst(value, "@_prst") || "")) ? Math.min(geometry.w, geometry.h) * 0.08 : undefined;
   const id = String(firstString(cNvPr, "@_id") || "element-" + zIndex);
+  const crop = elementType === "image" ? extractPictureCrop(value) : undefined;
+  const rotation = elementType === "image" ? extractPictureRotation(transform) : undefined;
   const source: EvidenceSource = { sourceFile, elementId: id };
   const explicitProperties = new Set<InheritableProperty>();
   const propertySources: Partial<Record<InheritableProperty, EvidenceSource>> = {};
@@ -463,7 +554,7 @@ function extractShape(
     explicitProperties.add("fontWeight");
     propertySources.fontWeight = source;
   }
-  const shapeProperties = findFirst(value, "p:spPr");
+  const shapeProperties = fallbackType === "group" ? undefined : findFirst(value, "p:spPr");
   const lineProperties = findFirst(shapeProperties, "a:ln");
   const fillDeclaration = findDirectShapeFill(shapeProperties);
   const fill = firstColor(fillDeclaration, theme);
@@ -489,9 +580,11 @@ function extractShape(
     stroke,
     radius,
     placeholderType: firstString(placeholder, "@_type"),
-    relationshipId: firstString(findFirst(value, "a:blip"), "@_r:embed")
+    relationshipId: elementType === "group" ? undefined : firstString(findFirst(value, "a:blip"), "@_r:embed")
       || firstString(findFirst(value, "a:blip"), "@_embed")
       || firstString(findFirst(value, "a:blip"), "@_r:link"),
+    ...(crop ? { crop } : {}),
+    ...(rotation ? { rotation } : {}),
     sourceFile,
     zIndex,
     ...(placeholderIndex === undefined ? {} : { __placeholderIndex: placeholderIndex }),
@@ -500,6 +593,78 @@ function extractShape(
     __propertySources: propertySources,
     __inheritedSources: [],
   };
+}
+
+function parseGroupTransform(value: unknown): GroupTransform | undefined {
+  const record = asRecord(value);
+  const off = asRecord(record?.["a:off"]);
+  const ext = asRecord(record?.["a:ext"]);
+  const childOff = asRecord(record?.["a:chOff"]);
+  const childExt = asRecord(record?.["a:chExt"]);
+  if (!hasNumericAttribute(off, "@_x") || !hasNumericAttribute(off, "@_y") ||
+    !hasNumericAttribute(ext, "@_cx") || !hasNumericAttribute(ext, "@_cy") ||
+    !hasNumericAttribute(childOff, "@_x") || !hasNumericAttribute(childOff, "@_y") ||
+    !hasNumericAttribute(childExt, "@_cx") || !hasNumericAttribute(childExt, "@_cy")) return undefined;
+  const width = numberAttribute(ext, "@_cx");
+  const height = numberAttribute(ext, "@_cy");
+  const childWidth = numberAttribute(childExt, "@_cx");
+  const childHeight = numberAttribute(childExt, "@_cy");
+  if (width <= 0 || height <= 0 || childWidth <= 0 || childHeight <= 0) return undefined;
+  const sx = width / childWidth;
+  const sy = height / childHeight;
+  return {
+    sx,
+    sy,
+    tx: numberAttribute(off, "@_x") - sx * numberAttribute(childOff, "@_x"),
+    ty: numberAttribute(off, "@_y") - sy * numberAttribute(childOff, "@_y"),
+  };
+}
+
+function composeGroupTransforms(parent: GroupTransform, local: GroupTransform): GroupTransform {
+  return {
+    sx: parent.sx * local.sx,
+    sy: parent.sy * local.sy,
+    tx: parent.sx * local.tx + parent.tx,
+    ty: parent.sy * local.ty + parent.ty,
+  };
+}
+
+function hasGroupRotationOrFlip(value: Record<string, unknown> | undefined) {
+  return Boolean(value && (numberAttribute(value, "@_rot") !== 0 ||
+    firstString(value, "@_flipH") === "1" || firstString(value, "@_flipH") === "true" ||
+    firstString(value, "@_flipV") === "1" || firstString(value, "@_flipV") === "true"));
+}
+
+function extractPictureCrop(value: unknown): TemplateElement["crop"] {
+  // A crop belongs to this picture placement, never to its media relationship.
+  const blipFill = asRecord(value)?.["p:blipFill"];
+  const srcRect = asRecord(blipFill)?.["a:srcRect"];
+  if (srcRect === undefined) return undefined;
+  const attributes = asRecord(srcRect);
+  if (!attributes) return undefined;
+  const crop = {} as NonNullable<TemplateElement["crop"]>;
+  for (const [property, attribute] of [
+    ["left", "@_l"], ["top", "@_t"], ["right", "@_r"], ["bottom", "@_b"],
+  ] as const) {
+    const raw = attributes[attribute];
+    // OOXML uses integer units of 1/1000 percent. Missing sides mean zero.
+    if (raw === undefined) {
+      crop[property] = 0;
+    } else if (typeof raw === "string" && /^-?\d+$/.test(raw)) {
+      crop[property] = Number(raw) / 1000;
+    } else {
+      return undefined;
+    }
+  }
+  return canvasImageCropSchema.safeParse(crop).success ? crop : undefined;
+}
+
+function extractPictureRotation(value: unknown): TemplateElement["rotation"] {
+  const raw = firstString(value, "@_rot");
+  if (!raw || !/^-?\d+$/u.test(raw)) return undefined;
+  // OOXML angles are 1/60000 degree. Normalize full turns to an absent value.
+  const degrees = ((Number(raw) / 60_000) % 360 + 360) % 360;
+  return Number.isFinite(degrees) && degrees !== 0 ? degrees : undefined;
 }
 
 async function hydrateLayoutRelationships(
@@ -590,7 +755,8 @@ async function hydrateRelationships(
     const target = relationship?.targetFile;
     const file = target ? zip.files[target] : undefined;
     const source = relationshipSource(relsFile, relationship?.relationshipId || element.relationshipId);
-    if (!relationship || relationship.targetMode === "External" || !target || !file || !/^ppt\/media\//i.test(target)) {
+    if (!relationship || relationship.targetMode === "External" || !target || !file || !/^ppt\/media\//i.test(target)
+      || mimeFromPackagePath(target) === "application/octet-stream") {
       addUnresolvedRelationshipWarning(warnings, sourceFile, element.relationshipId, relationship);
       imageAssets.push({
         relationshipId: element.relationshipId,
@@ -729,11 +895,16 @@ function mergeInheritedElements(
   return [...copies, ...mergedOwn];
 }
 
+function isPlaceholder(element: InternalTemplateElement): element is InternalTemplateElement {
+  return element.type === "placeholder";
+}
+
 function placeholdersMatch(left: InternalTemplateElement, right: InternalTemplateElement) {
   if (left.type !== "placeholder" || right.type !== "placeholder") return false;
   const leftIndex = left.__placeholderIndex;
   const rightIndex = right.__placeholderIndex;
-  if (leftIndex !== undefined && rightIndex !== undefined && leftIndex !== rightIndex) return false;
+  // An omitted OOXML placeholder index defaults to zero.
+  if ((leftIndex ?? "0") !== (rightIndex ?? "0")) return false;
   if (left.placeholderType && right.placeholderType && left.placeholderType !== right.placeholderType) return false;
   if (leftIndex !== undefined && rightIndex !== undefined) return true;
   const leftType = left.placeholderType || "obj";
@@ -792,10 +963,12 @@ function extractGraphicFrame(
   slideSize: { width: number; height: number },
   theme: ThemeTokens,
   sourceFile: string,
+  parent: GroupTransform = identityGroupTransform,
+  insideGroup = false,
 ) {
   const hasTable = Boolean(findFirst(value, "a:tbl"));
   const hasChart = Boolean(findFirst(value, "c:chart"));
-  return extractShape(value, hasTable ? "table" : hasChart ? "chart" : "unknown", zIndex, slideSize, theme, sourceFile);
+  return extractShape(value, hasTable ? "table" : hasChart ? "chart" : "unknown", zIndex, slideSize, theme, sourceFile, parent, insideGroup);
 }
 
 function normalizeGeometry(
@@ -1116,6 +1289,26 @@ function elementSource(element: TemplateElement, property?: InheritableProperty)
   };
 }
 
+function warningBelongsToSource(warning: string, sourceFile: string) {
+  return warning.includes("sourceFile=" + sourceFile + ";")
+    || warning.endsWith("sourceFile=" + sourceFile)
+    || warning.includes(" for " + sourceFile + ";")
+    || warning.endsWith(" for " + sourceFile)
+    || warning.includes("XML part: " + sourceFile);
+}
+
+function layoutConfidence(layout: InternalTemplateLayout) {
+  if (layout.sourceFile === "generated") return 0.15;
+  const elementScore = layout.elements.length
+    ? layout.elements.reduce((sum, element) => sum + elementConfidence(element), 0) / layout.elements.length
+    : 0.15;
+  const backgroundScore = layout.__effectiveBackground?.confidence ?? 0.15;
+  const warningPenalty = Math.min(0.55,
+    (layout.parserWarnings?.length ?? 0) * 0.08
+    + (layout.parserWarnings?.some((warning) => /^(?:Invalid .* relationship target|Unresolved relationship)/.test(warning)) ? 0.2 : 0));
+  return round(Math.max(0, Math.min(1, 0.15 + 0.6 * elementScore + 0.25 * backgroundScore - warningPenalty)));
+}
+
 function elementConfidence(element: TemplateElement) {
   if (!element.sourceFile) return 0.15;
   return element.inheritedFrom ? 0.85 : 0.95;
@@ -1218,7 +1411,7 @@ function inferVisualPatterns(layouts: TemplateLayout[]) {
   return [...patterns];
 }
 
-function deduplicateLayouts(layouts: TemplateLayout[]) {
+function deduplicateLayouts<T extends TemplateLayout>(layouts: T[]): T[] {
   const signatures = new Set<string>();
   return layouts.filter((layout) => {
     const signature = layout.composition + ":" + layout.elements.map((element) =>
@@ -1253,6 +1446,7 @@ function emptyLayout(slideSize: { width: number; height: number }): InternalTemp
     name: "Fallback title",
     source: "layout",
     sourceFile: "generated",
+    __showMasterShapes: true,
     width: slideSize.width,
     height: slideSize.height,
     background: "#FFFFFF",
@@ -1279,11 +1473,55 @@ async function readXml(zip: JSZip, name: string, warnings: string[], optional = 
   }
   if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error("Unsafe XML declaration in PPTX package");
   try {
-    return xmlParser.parse(xml) as ParsedXml;
+    const parsed = xmlParser.parse(xml) as ParsedXml;
+    if (/^ppt\/(?:slides|slideLayouts|slideMasters)\/[^/]+\.xml$/i.test(name)) {
+      Object.defineProperty(parsed, elementOrder, { value: orderedElementIds(orderedXmlParser.parse(xml)) });
+    }
+    return parsed;
   } catch {
     warnings.push("Could not parse XML part: " + name);
     return undefined;
   }
+}
+
+function orderedElementIds(document: unknown): string[] {
+  const ids: string[] = [];
+  const elementKeys = new Set(["p:sp", "p:pic", "p:cxnSp", "p:graphicFrame", "p:grpSp"]);
+  const findId = (value: unknown): string | undefined => {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const id = findId(item);
+        if (id) return id;
+      }
+      return undefined;
+    }
+    const record = asRecord(value);
+    if (!record) return undefined;
+    if ("p:cNvPr" in record) return firstString(record[":@"], "@_id");
+    for (const child of Object.values(record)) {
+      const id = findId(child);
+      if (id) return id;
+    }
+    return undefined;
+  };
+  const walk = (value: unknown, inTree = false) => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => walk(item, inTree));
+      return;
+    }
+    const record = asRecord(value);
+    if (!record) return;
+    for (const [key, child] of Object.entries(record)) {
+      if (key === "p:spTree") walk(child, true);
+      else if (inTree && elementKeys.has(key)) {
+        const id = findId(child);
+        if (id) ids.push(id);
+        if (key === "p:grpSp") walk(child, true);
+      } else if (!inTree) walk(child, false);
+    }
+  };
+  walk(document);
+  return ids;
 }
 
 function listPackageFiles(zip: JSZip, matcher: RegExp) {

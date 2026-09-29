@@ -1,11 +1,15 @@
 # P0 — Multi-agent generation pipeline
 
-**Status:** implementation in progress. See [the project backlog](BACKLOG.md);\nreconcile this plan with current code and acceptance evidence before assigning\nwork.
+**Status:** implementation in progress. Accepted slices and the next unfinished
+task are tracked in `D:\presentation\docs\VK_TECH_CURRENT_STATE_AND_ROADMAP.md`;
+reconcile this plan with current code and acceptance evidence before assigning
+work.
 
-**Scope:** only this repository. Do not modify unrelated Lazyum\napplications, production routes, or infrastructure.
+**Scope:** only `D:\presentation\vk-tech-hackathon`. Do not modify the root
+Lazyum application, production routes, Docker infrastructure, or unrelated
+dirty files.
 
 ## Objective
-
 
 Raise generation quality by adding specialized model roles around the existing
 deterministic presentation compiler:

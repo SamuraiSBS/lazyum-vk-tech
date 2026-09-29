@@ -15,6 +15,8 @@ import {
   Check,
   CheckCircle2,
   Download,
+  RotateCcw,
+  RotateCw,
   FileStack,
   GripVertical,
   ImagePlus,
@@ -40,6 +42,14 @@ import {
 } from "@/lib/draft-storage";
 import { VK_WAVE_COLORS, WavyBackground } from "@/components/wavy-background";
 import { clampToCanvas, clientDeltaToCanvas } from "@/lib/editor-geometry";
+import {
+  editorShortcut,
+  isHistoryAtInitial,
+  recordHistory,
+  startHistory,
+  travelHistory,
+  type VariantHistories,
+} from "@/lib/editor-history";
 import type {
   AuditReport,
   CanvasElement,
@@ -348,6 +358,58 @@ export function HackathonStudio() {
   const [templateDragging, setTemplateDragging] = useState(false);
   const draftWarningShown = useRef(false);
   const skipNextDraftSave = useRef(false);
+  const histories = useRef<VariantHistories>({});
+  const activeVariant = useRef<LayoutVariant>("balanced");
+  const historyGeneration = useRef(0);
+  const [historyRevision, setHistoryRevision] = useState(0);
+
+  function resetHistories(documents: Partial<Record<LayoutVariant, PresentationDocument>>) {
+    historyGeneration.current += 1;
+    histories.current = Object.fromEntries(
+      Object.entries(documents).map(([key, document]) => [key, startHistory(document)]),
+    ) as VariantHistories;
+    setHistoryRevision((value) => value + 1);
+  }
+
+  function commitDocument(document: PresentationDocument, targetVariant: LayoutVariant = variant) {
+    const current = histories.current[targetVariant] || startHistory(document);
+    const next = recordHistory(current, document);
+    if (next === current) return;
+    histories.current = { ...histories.current, [targetVariant]: next };
+    setHistoryRevision((value) => value + 1);
+    if (activeVariant.current === targetVariant) setPresentation(next.present);
+    setPresentations((all) => all ? { ...all, [targetVariant]: next.present } : all);
+    setChangedVariants((all) => ({ ...all, [targetVariant]: !isHistoryAtInitial(next) }));
+    setAudits((all) => all ? { ...all, [targetVariant]: effectiveAuditPresentation(next.present) } : all);
+    if (generationJobId) replaceJobInUrl(null);
+  }
+
+  function travelDocument(direction: "undo" | "redo") {
+    const current = histories.current[variant];
+    if (!current) return;
+    const next = travelHistory(current, direction);
+    if (next === current) return;
+    histories.current = { ...histories.current, [variant]: next };
+    setHistoryRevision((value) => value + 1);
+    setPresentation(next.present);
+    setPresentations((all) => all ? { ...all, [variant]: next.present } : all);
+    setChangedVariants((all) => ({ ...all, [variant]: !isHistoryAtInitial(next) }));
+    setSelectedElement((id) => id && next.present.slides[selectedSlide]?.canvas.elements.some((element) => element.id === id) ? id : null);
+    setError("");
+    if (generationJobId) replaceJobInUrl(null);
+  }
+
+  useEffect(() => {
+    if (!presentation) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const direction = editorShortcut(event);
+      if (!direction || !histories.current[variant]) return;
+      event.preventDefault();
+      travelDocument(direction);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [presentation, variant, historyRevision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -381,6 +443,7 @@ export function HackathonStudio() {
           skipNextDraftSave.current = true;
           setDesignSystem(result.designSystem);
           setPresentations(result.presentations);
+          resetHistories(result.presentations);
           setAudits(result.audits);
           setGenerationJobId(jobId);
           setGenerationSummary(restoredSummary);
@@ -391,6 +454,7 @@ export function HackathonStudio() {
           setChangedVariants(emptyVariantChanges());
           setExportStates(emptyExportStates());
           setVariant("balanced");
+          activeVariant.current = "balanced";
           setPresentation(restored);
           setAudit(result.audits.balanced);
           setSelectedSlide(0);
@@ -409,7 +473,9 @@ export function HackathonStudio() {
       void loadPresentationDraft().then((document) => {
         if (cancelled || !document) return;
         setVariant(document.variant || "balanced");
+        activeVariant.current = document.variant || "balanced";
         setPresentation(document);
+        resetHistories({ [document.variant || "balanced"]: document });
         setDesignSystem(document.designSystem);
         setAudit(effectiveAuditPresentation(document));
         setSuccess("Восстановлен локально сохранённый черновик.");
@@ -533,12 +599,14 @@ export function HackathonStudio() {
       if (!result.jobId)
         throw new Error("Generation completed without a persisted job id.");
       setPresentations(result.presentations);
+      resetHistories(result.presentations);
       setAudits(result.audits);
       setGenerationJobId(result.jobId);
       replaceJobInUrl(result.jobId);
       setChangedVariants(emptyVariantChanges());
       setExportStates(emptyExportStates());
       setVariant(variant);
+      activeVariant.current = variant;
       setDesignSystem(result.presentations[variant].designSystem);
       setPresentation(result.presentations[variant]);
       setAudit(effectiveAuditPresentation(result.presentations[variant]));
@@ -665,8 +733,7 @@ export function HackathonStudio() {
 
   function updateElement(elementId: string, patch: Partial<CanvasElement>) {
     if (!currentSlide?.canvas.elements.some((element) => element.id === elementId)) return;
-    const updateDocument = (current: PresentationDocument | null) => {
-      if (!current || !currentSlide) return current;
+    const updateDocument = (current: PresentationDocument) => {
       return {
         ...current,
         slides: current.slides.map((slide) =>
@@ -686,16 +753,7 @@ export function HackathonStudio() {
         ),
       };
     };
-    setPresentation((current) => {
-      return updateDocument(current);
-    });
-    setPresentations((current) =>
-      current
-        ? { ...current, [variant]: updateDocument(current[variant]) }
-        : current,
-    );
-    setChangedVariants((current) => ({ ...current, [variant]: true }));
-    if (generationJobId) replaceJobInUrl(null);
+    if (presentation) commitDocument(updateDocument(histories.current[variant]?.present || presentation));
   }
 
   function updateSelectedNumber(
@@ -717,7 +775,10 @@ export function HackathonStudio() {
 
   async function replaceSelectedImage(file: File | undefined) {
     const target = selectedCanvasElement;
-    if (!file || !target || target.type !== "image") return;
+    const originVariant = variant;
+    const originSlideId = currentSlide?.id;
+    const originGeneration = historyGeneration.current;
+    if (!file || !target || target.type !== "image" || !originSlideId) return;
     if (!replacementImageTypes.has(file.type) || file.size === 0 || file.size > MAX_REPLACEMENT_IMAGE_BYTES) {
       setError("Выберите PNG, JPEG, GIF или WebP размером до 8 МБ.");
       return;
@@ -729,17 +790,33 @@ export function HackathonStudio() {
       await decodeImage(dataUrl);
       // A crop belongs to the old source image. Clear it while retaining the
       // selected object's identity, position, size and stacking order.
-      updateElement(target.id, { dataUrl, alt: file.name.slice(0, 160), crop: undefined });
-      setError("");
-      setSuccess("Изображение заменено. Старое кадрирование сброшено.");
+      if (originGeneration !== historyGeneration.current) return;
+      const originDocument = histories.current[originVariant]?.present;
+      if (!originDocument) return;
+      const slide = originDocument.slides.find((item) => item.id === originSlideId);
+      if (!slide?.canvas.elements.some((element) => element.id === target.id && element.type === "image")) return;
+      commitDocument({
+        ...originDocument,
+        slides: originDocument.slides.map((item) => item.id === originSlideId ? {
+          ...item,
+          canvas: { ...item.canvas, elements: item.canvas.elements.map((element) =>
+            element.id === target.id ? { ...element, dataUrl, alt: file.name.slice(0, 160), crop: undefined } : element,
+          ) },
+        } : item),
+      }, originVariant);
+      if (activeVariant.current === originVariant) {
+        setError("");
+        setSuccess("Изображение заменено. Старое кадрирование сброшено.");
+      }
     } catch (reason) {
-      setError(messageFor(reason));
+      if (originGeneration === historyGeneration.current && activeVariant.current === originVariant) setError(messageFor(reason));
     }
   }
 
   function selectVariant(nextVariant: LayoutVariant) {
-    const nextPresentation = presentations?.[nextVariant];
+    const nextPresentation = histories.current[nextVariant]?.present || presentations?.[nextVariant];
     if (!nextPresentation) return;
+    activeVariant.current = nextVariant;
     setVariant(nextVariant);
     setPresentation(nextPresentation);
     setAudit(effectiveAuditPresentation(nextPresentation));
@@ -752,16 +829,11 @@ export function HackathonStudio() {
     message: string,
   ) {
     const nextAudit = effectiveAuditPresentation(nextPresentation);
-    setPresentation(nextPresentation);
-    setPresentations((current) =>
-      current ? { ...current, [variant]: nextPresentation } : current,
-    );
+    commitDocument(nextPresentation);
     setAudit(nextAudit);
     setAudits((current) =>
       current ? { ...current, [variant]: nextAudit } : current,
     );
-    setChangedVariants((current) => ({ ...current, [variant]: true }));
-    if (generationJobId) replaceJobInUrl(null);
     setError("");
     setSuccess(message);
   }
@@ -832,6 +904,10 @@ export function HackathonStudio() {
   }
 
   function resetProject() {
+    histories.current = {};
+    historyGeneration.current += 1;
+    activeVariant.current = "balanced";
+    setHistoryRevision((value) => value + 1);
     void clearPresentationDraft();
     replaceJobInUrl(null);
     setPresentations(null);
@@ -1330,6 +1406,10 @@ export function HackathonStudio() {
                 </span>
                 <h2>{currentSlide?.title}</h2>
               </div>
+              <div className="editor-history-controls" aria-label="История редактора">
+                <button type="button" aria-label="Отменить" title="Отменить (Ctrl+Z)" disabled={!histories.current[variant]?.past.length} onClick={() => travelDocument("undo")}><RotateCcw size={16} /> Отменить</button>
+                <button type="button" aria-label="Повторить" title="Повторить (Ctrl+Y)" disabled={!histories.current[variant]?.future.length} onClick={() => travelDocument("redo")}><RotateCw size={16} /> Повторить</button>
+              </div>
             </div>
             {currentSlide && (
               <EditableCanvas
@@ -1627,6 +1707,12 @@ export function HackathonStudio() {
                       <LayoutPreview key={layout.id} layout={layout} />
                     ))}
                   </div>
+                  {designSystem && globalParserWarnings(designSystem).length > 0 && (
+                    <div data-testid="global-parser-warnings">
+                      <strong>Общие предупреждения parser</strong>
+                      <ul>{globalParserWarnings(designSystem).map((warning, index) => <li key={warning + index}>{warning}</li>)}</ul>
+                    </div>
+                  )}
                 </section>
               </div>
             </details>
@@ -1667,7 +1753,7 @@ export function HackathonStudio() {
                 </button>
                 {issues.length ? (
                   <ul className="audit-list">
-                    {issues.slice(0, 5).map((issue) => (
+                    {issues.map((issue) => (
                       <li
                         key={
                           issue.issueKey ||
@@ -1970,7 +2056,21 @@ function CanvasObject({
         />
       )}
       {element.type === "image" && element.dataUrl && (
-        <img src={element.dataUrl} alt={element.alt} />
+        element.crop ? (
+          <span style={{ display: "block", position: "relative", width: "100%", height: "100%",
+            overflow: "hidden", transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined }}>
+            <img src={element.dataUrl} alt={element.alt} style={{
+              position: "absolute", maxWidth: "none", objectFit: "fill",
+              width: `${10000 / (100 - element.crop.left - element.crop.right)}%`,
+              height: `${10000 / (100 - element.crop.top - element.crop.bottom)}%`,
+              left: `${-100 * element.crop.left / (100 - element.crop.left - element.crop.right)}%`,
+              top: `${-100 * element.crop.top / (100 - element.crop.top - element.crop.bottom)}%`,
+            }} />
+          </span>
+        ) : (
+          <img src={element.dataUrl} alt={element.alt}
+            style={{ objectFit: "fill", transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined }} />
+        )
       )}
       {isSelected && (
         <button
@@ -2019,6 +2119,11 @@ function MiniSlide({
   );
 }
 
+function globalParserWarnings(designSystem: DesignSystem) {
+  const local = new Set(designSystem.layouts.flatMap((layout) => layout.parserWarnings || []));
+  return designSystem.warnings.filter((warning) => !local.has(warning));
+}
+
 function LayoutPreview({
   layout,
 }: {
@@ -2053,6 +2158,12 @@ function LayoutPreview({
       <span>
         <strong>{layout.composition}</strong>
         <small>{layout.name}</small>
+        <small data-testid="layout-confidence">Уверенность: {typeof layout.confidence === "number" ? Math.round(layout.confidence * 100) + "%" : "нет данных"}</small>
+        {layout.parserWarnings?.length ? (
+          <ul data-testid="layout-parser-warnings" aria-label={"Предупреждения макета " + layout.name}>
+            {layout.parserWarnings.map((warning, index) => <li key={warning + index}>{warning}</li>)}
+          </ul>
+        ) : null}
       </span>
     </div>
   );
@@ -2070,6 +2181,7 @@ function DesignDebug({
   compact?: boolean;
 }) {
   const firstSlide = renderEvidence.slides[0];
+  const globalWarnings = globalParserWarnings(designSystem);
   if (compact) {
     return (
       <section
@@ -2099,6 +2211,12 @@ function DesignDebug({
             {designSystem.typography.headingFonts[0] || "Шрифт определён"}
           </span>
         </div>
+        {globalWarnings.length > 0 && (
+          <div data-testid="global-parser-warnings">
+            <strong>Общие предупреждения parser</strong>
+            <ul>{globalWarnings.map((warning, index) => <li key={warning + index}>{warning}</li>)}</ul>
+          </div>
+        )}
       </section>
     );
   }
@@ -2254,9 +2372,9 @@ function DesignDebug({
             fontWeight: 850,
           }}
         >
-          Предупреждения parser
+          Общие предупреждения parser
         </span>
-        {designSystem.warnings.length ? (
+        {globalWarnings.length ? (
           <ul
             style={{
               margin: "8px 0 0",
@@ -2265,7 +2383,7 @@ function DesignDebug({
               fontSize: "0.8rem",
             }}
           >
-            {designSystem.warnings.map((warning, index) => (
+            {globalWarnings.map((warning, index) => (
               <li key={warning + index}>{warning}</li>
             ))}
           </ul>

@@ -21,6 +21,10 @@ const browserExecutable = [
 ].find((candidate) => Boolean(candidate && existsSync(candidate))) || null;
 
 test.use({
+  httpCredentials: {
+    username: process.env.VK_HACKATHON_DEMO_AUTH_USER ?? "",
+    password: process.env.VK_HACKATHON_DEMO_AUTH_PASSWORD ?? "",
+  },
   launchOptions: {
     executablePath: browserExecutable || chromium.executablePath(),
   },
@@ -116,7 +120,7 @@ const fixtureDocument: PresentationDocument = presentationDocumentSchema.parse({
                 id: "ignored-text-overflow",
                 type: "text",
                 x: 140,
-                y: 120,
+                y: 500,
                 w: 72,
                 h: 8,
                 text: "A sentence that must wrap into several lines",
@@ -208,7 +212,7 @@ test.describe("P0-8 audit actions", () => {
     );
 
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Audit", exact: true })).toBeVisible();
+    await page.getByTestId("audit-disclosure").locator("summary").click();
     await expect(page.getByRole("status")).toContainText(
       "Восстановлен локально сохранённый черновик.",
     );
@@ -216,7 +220,6 @@ test.describe("P0-8 audit actions", () => {
     const auditSection = page.locator(".audit-section");
     const auditIssues = auditSection.locator("li");
     await expect(auditIssues).toHaveCount(2);
-    await expect(page.getByText("Нужна проверка", { exact: true })).toBeVisible();
 
     const outsideSlideIssue = auditIssues.filter({ hasText: OUTSIDE_SLIDE_MESSAGE });
     await expect(outsideSlideIssue).toBeVisible();
@@ -231,9 +234,8 @@ test.describe("P0-8 audit actions", () => {
       "Исправление применено и audit выполнен повторно.",
     );
     await expect(auditIssues.filter({ hasText: OUTSIDE_SLIDE_MESSAGE })).toHaveCount(0);
-    await expect(bulkFixButton).toBeDisabled();
+    await expect(bulkFixButton).toBeEnabled();
     await expect(page.getByText(TEXT_OVERFLOW_MESSAGE, { exact: true })).toBeVisible();
-    await expect(page.getByText("Нужна проверка", { exact: true })).toBeVisible();
 
     const overflowIssue = auditIssues.filter({ hasText: TEXT_OVERFLOW_MESSAGE });
     await overflowIssue
@@ -243,8 +245,7 @@ test.describe("P0-8 audit actions", () => {
       "Замечание помечено как ignored и audit выполнен повторно.",
     );
     await expect(overflowIssue).toContainText("ignored");
-    await expect(page.getByText("Canvas проверен", { exact: true })).toBeVisible();
-    await expect(auditSection.locator(".audit-count")).toHaveClass(/audit-ok/u);
+    await expect(page.getByTestId("audit-count")).toHaveClass(/audit-ok/u);
     await expect(auditIssues).toHaveCount(1);
 
     await expect
@@ -254,7 +255,7 @@ test.describe("P0-8 audit actions", () => {
       .toEqual(["fix", "ignore"]);
 
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: "Audit", exact: true })).toBeVisible();
+    await page.getByTestId("audit-disclosure").locator("summary").click();
     await expect(page.getByRole("status")).toContainText(
       "Восстановлен локально сохранённый черновик.",
     );
@@ -267,8 +268,36 @@ test.describe("P0-8 audit actions", () => {
       hasText: TEXT_OVERFLOW_MESSAGE,
     });
     await expect(reopenedOverflowIssue).toContainText("ignored");
-    await expect(page.getByText("Canvas проверен", { exact: true })).toBeVisible();
-    await expect(page.locator(".audit-section .audit-count")).toHaveClass(/audit-ok/u);
+    await expect(page.getByTestId("audit-count")).toHaveClass(/audit-ok/u);
     await expect(reopenedAuditIssues).toHaveCount(1);
+  });
+
+  test("fixes editable text overflow and persists the repaired draft across reload", async ({ page }) => {
+    const fixableDocument = structuredClone(fixtureDocument);
+    const text = fixableDocument.slides[0].canvas.elements.find((element) => element.id === "ignored-text-overflow");
+    if (!text || text.type !== "text") throw new Error("Missing overflow fixture");
+    text.y = 120;
+    await page.addInitScript(({ draftKey, seedKey, document }) => {
+      if (window.localStorage.getItem(seedKey) === "seeded") return;
+      window.localStorage.setItem(draftKey, JSON.stringify(document));
+      window.localStorage.setItem(seedKey, "seeded");
+    }, { draftKey: DRAFT_KEY, seedKey: DRAFT_SEED_KEY, document: fixableDocument });
+
+    await page.goto("/");
+    await page.getByTestId("audit-disclosure").locator("summary").click();
+    const auditSection = page.locator(".audit-section");
+    const overflowIssue = auditSection.locator("li").filter({ hasText: TEXT_OVERFLOW_MESSAGE });
+    await expect(overflowIssue).toBeVisible();
+    await overflowIssue.getByRole("button", { name: "Исправить", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText("Исправление применено и audit выполнен повторно.");
+    await expect(overflowIssue).toHaveCount(0);
+    await expect(auditSection.locator("li").filter({ hasText: OUTSIDE_SLIDE_MESSAGE })).toBeVisible();
+    await expect.poll(async () => readPersistedAuditActions(page)).toContain("fix");
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.getByTestId("audit-disclosure").locator("summary").click();
+    await expect(page.getByRole("status")).toContainText("Восстановлен локально сохранённый черновик.");
+    await expect(auditSection.locator("li").filter({ hasText: TEXT_OVERFLOW_MESSAGE })).toHaveCount(0);
+    await expect(auditSection.locator("li").filter({ hasText: OUTSIDE_SLIDE_MESSAGE })).toBeVisible();
   });
 });
