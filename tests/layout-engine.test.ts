@@ -40,10 +40,25 @@ describe("Layout Engine", () => {
     const smallerImage = design.layouts.find((layout) => layout.id === "slide-33");
     const clippedImage = design.layouts.find((layout) => layout.id === "layout-16");
     if (!largeImage || !smallerImage || !clippedImage) throw new Error("Image layout regression requires source compositions");
+    const largeImageTextSlot = largeImage.elements.find((element) => element.type === "placeholder");
+    if (!largeImageTextSlot) throw new Error("Image layout regression requires a text slot");
+    const thinDiagonalLine = {
+      ...largeImageTextSlot,
+      id: "thin-diagonal-line",
+      type: "line" as const,
+      x: 70,
+      y: 250,
+      w: 510,
+      h: 400,
+      text: "",
+    };
     const withoutCrops = design.layouts.map((layout) => ({
       ...layout,
       name: "Unlabelled visual composition",
-      elements: layout.elements.map((element) => element.type === "image" ? { ...element, crop: undefined } : element),
+      elements: [
+        ...layout.elements.map((element) => element.type === "image" ? { ...element, crop: undefined } : element),
+        ...(layout.id === largeImage.id ? [thinDiagonalLine] : []),
+      ],
     }));
     const slide = {
       id: "image-story",
@@ -56,11 +71,17 @@ describe("Layout Engine", () => {
     for (const variant of ["compact", "balanced", "visual"] as const) {
       const selected = chooseTemplateLayout({ ...design, layouts: withoutCrops }, slide, variant);
       expect(selected.id, variant).toBe(largeImage.id);
-      const blocked = withoutCrops.map((layout) => layout.id === largeImage.id
-        ? { ...layout, elements: layout.elements.map((element) => element.type === "line"
-          ? { ...element, type: "shape" as const } : element) }
-        : layout);
-      expect(chooseTemplateLayout({ ...design, layouts: blocked }, slide, variant).id, variant).toBe(smallerImage.id);
+      const lineComposition = withoutCrops.find((layout) => layout.id === largeImage.id);
+      if (!lineComposition) throw new Error("Image layout regression requires the large image composition");
+      const shapeComposition = {
+        ...lineComposition,
+        id: "large-image-with-shape",
+        elements: lineComposition.elements.map((element) => element.id === thinDiagonalLine.id
+          ? { ...element, type: "shape" as const } : element),
+      };
+      const lineLayout = { ...lineComposition, id: "large-image-with-line" };
+      const preferred = chooseTemplateLayout({ ...design, layouts: [lineLayout, shapeComposition] }, slide, variant);
+      expect(preferred.id, variant).toBe(lineLayout.id);
     }
   });
 
