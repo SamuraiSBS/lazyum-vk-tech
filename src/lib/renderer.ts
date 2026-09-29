@@ -369,7 +369,7 @@ function renderSlide(
     ));
   }
   if (usesCardFallback) {
-    elements.push(...fallbackCards(slide.id, slide.content, layout, background, palette, designSystem, artwork));
+    elements.push(...fallbackCards(slide.id, slide.content, layout, background, palette, designSystem, artwork, titleSlot));
   }
   dataVisuals.forEach((input) => {
     if (input.spec.visualType === "table") {
@@ -1212,6 +1212,7 @@ function fallbackCards(
   palette: string[],
   designSystem: DesignSystem,
   artwork: readonly Rect[],
+  titleSlot: Rect,
 ): CanvasElement[] {
   const values = packCardContent(content, 4);
   const gap = Math.max(16, layout.width * 0.02);
@@ -1225,7 +1226,8 @@ function fallbackCards(
     const x = layout.width * 0.09 + index * (cardWidth + gap);
     const card = { x, y: candidateY, w: cardWidth, h: cardHeight };
     const text = { x: x + 16, y: candidateY + 15, w: cardWidth - 32, h: layout.height * 0.12 };
-    return !overlapsArtwork(card, artwork) && !overlapsArtwork(text, artwork);
+    return !overlapsElement(card, titleSlot) && !overlapsElement(text, titleSlot)
+      && !overlapsArtwork(card, artwork) && !overlapsArtwork(text, artwork);
   })) ?? preferredY;
   const fill = palette.at(1) || (background === "#FFFFFF" ? "#F2F4F8" : "#FFFFFF");
   return values.flatMap((value, index) => {

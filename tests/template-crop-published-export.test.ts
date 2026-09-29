@@ -1,4 +1,6 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { deflateSync } from "node:zlib";
 import JSZip from "jszip";
@@ -110,7 +112,8 @@ async function exportedPictures(archive: JSZip, slideIndex: number) {
   const relationships = xmlParser.parse(relationshipsXml);
   const rels = new Map(entries(relationships.Relationships?.Relationship)
     .map((relationship) => [relationship["@_Id"], relationship["@_Target"]]));
-  return Promise.all(entries(slide["p:sld"]?.["p:cSld"]?.["p:spTree"]?.["p:pic"]).map(async (picture) => {
+  const pictures = [];
+  for (const picture of entries(slide["p:sld"]?.["p:cSld"]?.["p:spTree"]?.["p:pic"])) {
     const blip = picture["p:blipFill"]?.["a:blip"];
     const relationshipId = blip?.["@_r:embed"];
     const target = rels.get(relationshipId);
@@ -118,90 +121,133 @@ async function exportedPictures(archive: JSZip, slideIndex: number) {
     const mediaPath = path.posix.normalize(path.posix.join("ppt/slides", target.replace(/^\//u, "")));
     const bytes = await archive.file(mediaPath)?.async("nodebuffer");
     if (!bytes) throw new Error(`Missing image media ${mediaPath}`);
-    return { crop: picture["p:blipFill"]?.["a:srcRect"] as Record<string, string> | undefined, bytes, mediaPath };
+    pictures.push({ crop: picture["p:blipFill"]?.["a:srcRect"] as Record<string, string> | undefined, bytes, mediaPath });
+  }
+  return pictures;
+}
+
+async function generatePublishedJob(template: Buffer, templateName: string, brief: string, slideCount: number) {
+  const previousJobs = new Set((await readdir(artifactRoot)).filter((entry) => entry.startsWith("job-")));
+  const form = new FormData();
+  form.set("template", new File([new Uint8Array(template)], templateName, {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   }));
+  form.set("brief", brief);
+  form.set("slideCount", String(slideCount));
+  const response = await generate(new Request("http://localhost/api/generate", { method: "POST", body: form }));
+  if (response.status !== 200) {
+    throw new Error(`${templateName}: generation returned ${response.status}: ${(await response.text()).slice(0, 1000)}`);
+  }
+
+  const jobs = (await readdir(artifactRoot)).filter((entry) => entry.startsWith("job-") && !previousJobs.has(entry));
+  if (jobs.length !== 1) throw new Error(`${templateName}: expected one published job, found ${jobs.length}`);
+  return jobs[0]!;
+}
+
+async function selectedImagePlacements(store: ArtifactStore, jobId: string, variant: LayoutVariant, templateName: string) {
+  const manifest = await store.readManifest(jobId);
+  const references = manifest.artifacts.variants;
+  if (!references || !("compact" in references)) throw new Error(`${templateName}: missing published variants`);
+  const reference = references[variant];
+  if (!reference) throw new Error(`${templateName}/${variant}: missing published variant reference`);
+  const variantBytes = (await store.readPublishedArtifact(jobId, reference.relativePath)).contents;
+  expect(sha256(variantBytes), `${templateName}/${variant}: variant hash`).toBe(reference.sha256);
+  const document = presentationDocumentSchema.parse(JSON.parse(variantBytes.toString("utf8")));
+  const layouts = new Map(document.designSystem.layouts.map((layout) => [layout.id, layout]));
+  const placements: Array<{
+    slideIndex: number;
+    imageIndex: number;
+    label: string;
+    crop: { left: number; top: number; right: number; bottom: number } | undefined;
+    sha256: string;
+  }> = [];
+
+  for (const [slideIndex, slide] of document.slides.entries()) {
+    const images = [...slide.canvas.elements]
+      .sort((left, right) => left.zIndex - right.zIndex)
+      .filter((element): element is Extract<typeof element, { type: "image" }> =>
+        element.type === "image" && Boolean(element.dataUrl));
+    for (const [imageIndex, element] of images.entries()) {
+      const source = layouts.get(slide.templateLayoutId)?.elements.find((candidate) => candidate.id === element.sourceTemplateElementId);
+      const label = `${templateName}/${variant}: slide ${slideIndex + 1} image ${imageIndex}`;
+      expect(source, `${label}: source ${element.sourceTemplateElementId} in ${slide.templateLayoutId}`).toBeDefined();
+      expect(source?.type, `${label}: source type`).toBe("image");
+      expect(source?.sourceFile, `${label}: source provenance`).toMatch(/^ppt\//u);
+      expect(source?.relationshipId, `${label}: image relationship`).toBeTruthy();
+      expect(source?.imageDataUrl, `${label}: source bytes`).toBeTruthy();
+      expect(element.crop, `${label}: placement crop`).toEqual(source?.crop);
+      const bytes = pngBytes(element.dataUrl!);
+      expect(sha256(bytes), `${label}: canvas bytes`).toBe(sha256(pngBytes(source!.imageDataUrl!)));
+      placements.push({
+        slideIndex,
+        imageIndex,
+        label: `${source!.sourceFile}#${source!.id}`,
+        crop: element.crop,
+        sha256: sha256(bytes),
+      });
+    }
+  }
+  return { placements, slideCount: document.slides.length };
+}
+
+async function sha256File(filePath: string) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk);
+  return hash.digest("hex");
 }
 
 describe("template image crop through ordinary published generation and PPTX", () => {
   it.each(organizerTemplates)("preserves every selected image placement in published variants of %s", async (templateName) => {
     const template = await readFile(path.resolve(process.cwd(), "fixtures", "templates", "organizer", templateName));
-
-    const form = new FormData();
-    form.set("template", new File([new Uint8Array(template)], templateName, {
-      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    }));
-    form.set("brief", templateName === "Шаблон презентации VK Education.pptx"
-      ? "Образовательная программа VK: проблема, решение, процесс и результаты"
-      : "Платформа VK Tech: вызовы, решение, технология, этапы внедрения и результаты");
-    form.set("slideCount", "15");
-    const response = await generate(new Request("http://localhost/api/generate", { method: "POST", body: form }));
-    const payload = await response.json();
-    expect(response.status, JSON.stringify(payload)).toBe(200);
+    const jobId = await generatePublishedJob(template, templateName,
+      templateName === "Шаблон презентации VK Education.pptx"
+        ? "Образовательная программа VK: проблема, решение, процесс и результаты"
+        : "Платформа VK Tech: вызовы, решение, технология, этапы внедрения и результаты",
+      15);
     const store = new ArtifactStore(artifactRoot);
-    const documents = Object.fromEntries(variants.map((variant) => [
-      variant,
-      presentationDocumentSchema.parse(payload.presentations[variant]),
-    ])) as Record<LayoutVariant, ReturnType<typeof presentationDocumentSchema.parse>>;
-    const layouts = new Map(documents.balanced.designSystem.layouts.map((layout) => [layout.id, layout]));
     let imageCount = 0;
     let croppedPlacementCount = 0;
 
     for (const variant of variants) {
-      const document = documents[variant];
-      const selected = document.slides.flatMap((slide, slideIndex) => [...slide.canvas.elements]
-        .sort((left, right) => left.zIndex - right.zIndex)
-        .filter((element): element is Extract<typeof element, { type: "image" }> =>
-          element.type === "image" && Boolean(element.dataUrl))
-        .map((element, imageIndex) => {
-          const source = layouts.get(slide.templateLayoutId)?.elements.find((candidate) => candidate.id === element.sourceTemplateElementId);
-          expect(source, `${templateName}/${variant}: source ${element.sourceTemplateElementId} in ${slide.templateLayoutId}`).toBeDefined();
-          expect(source?.type).toBe("image");
-          expect(source?.sourceFile, `${templateName}/${variant}: source provenance`).toMatch(/^ppt\//u);
-          expect(source?.relationshipId, `${templateName}/${variant}: image relationship`).toBeTruthy();
-          expect(source?.imageDataUrl, `${templateName}/${variant}: source bytes`).toBeTruthy();
-          expect(element.crop, `${templateName}/${variant}: placement crop`).toEqual(source?.crop);
-          expect(pngBytes(element.dataUrl!), `${templateName}/${variant}: canvas bytes`).toEqual(pngBytes(source!.imageDataUrl!));
-          return { element, source: source!, slideIndex, imageIndex };
-        }));
-      imageCount += selected.length;
-
+      const { placements, slideCount } = await selectedImagePlacements(store, jobId, variant, templateName);
+      imageCount += placements.length;
       const exported = await exportPptx(new Request("http://localhost/api/export", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jobId: payload.jobId, variant }),
+        body: JSON.stringify({ jobId, variant }),
       }));
       const bytes = Buffer.from(await exported.arrayBuffer());
       expect(exported.status, `${variant}: ${bytes.toString("utf8").slice(0, 300)}`).toBe(200);
-      const exports = (await store.readManifest(payload.jobId)).artifacts.exports;
+      const exports = (await store.readManifest(jobId)).artifacts.exports;
       const reference = exports && typeof exports === "object" && "compact" in exports
         ? exports[variant].pptx : null;
       if (!reference) throw new Error(`Missing published ${variant} PPTX`);
       expect(reference.byteSize, `${templateName}/${variant}: manifest size`).toBe(bytes.byteLength);
       expect(reference.sha256).toBe(sha256(bytes));
-      expect((await store.readPublishedArtifact(payload.jobId, reference.relativePath)).contents).toEqual(bytes);
+      const filePath = store.jobPath(jobId, reference.relativePath);
+      expect((await stat(filePath)).size).toBe(bytes.byteLength);
+      expect(await sha256File(filePath)).toBe(reference.sha256);
       const pptx = await JSZip.loadAsync(bytes);
-      const slidePictures = new Map(await Promise.all(document.slides.map(async (_, slideIndex) => {
-        return [slideIndex, await exportedPictures(pptx, slideIndex)] as const;
-      })));
-      for (const { element, source, slideIndex, imageIndex } of selected) {
-        const picture = slidePictures.get(slideIndex)?.[imageIndex];
-        const label = `${templateName}/${variant}: slide ${slideIndex + 1} image ${imageIndex} from ${source.sourceFile}#${source.id}`;
-        expect(picture, label).toBeDefined();
-        expect(picture?.bytes, `${label}: exported ${picture?.mediaPath} bytes`).toEqual(pngBytes(element.dataUrl!));
-        if (source.crop) {
-          const expected = {
-            "@_l": String(Math.round(source.crop.left * 1000)), "@_t": String(Math.round(source.crop.top * 1000)),
-            "@_r": String(Math.round(source.crop.right * 1000)), "@_b": String(Math.round(source.crop.bottom * 1000)),
-          };
-          expect(picture?.crop, `${label}: exported crop`).toEqual(expected);
-          if (Object.values(expected).some((value) => value !== "0")) croppedPlacementCount += 1;
-        } else {
-          expect(picture?.crop, `${label}: unexpected exported crop`).toBeUndefined();
+      for (let slideIndex = 0; slideIndex < slideCount; slideIndex += 1) {
+        const pictures = await exportedPictures(pptx, slideIndex);
+        const selected = placements.filter((placement) => placement.slideIndex === slideIndex);
+        expect(pictures, templateName + "/" + variant + ": slide " + (slideIndex + 1) + " native picture count").toHaveLength(selected.length);
+        for (const placement of selected) {
+          const picture = pictures[placement.imageIndex];
+          const label = templateName + "/" + variant + ": slide " + (slideIndex + 1) + " image " + placement.imageIndex + " from " + placement.label;
+          expect(picture, label).toBeDefined();
+          expect(sha256(picture!.bytes), label + ": exported " + picture?.mediaPath + " bytes").toBe(placement.sha256);
+          if (placement.crop) {
+            const expected = {
+              "@_l": String(Math.round(placement.crop.left * 1000)), "@_t": String(Math.round(placement.crop.top * 1000)),
+              "@_r": String(Math.round(placement.crop.right * 1000)), "@_b": String(Math.round(placement.crop.bottom * 1000)),
+            };
+            expect(picture?.crop, label + ": exported crop").toEqual(expected);
+            if (Object.values(expected).some((value) => value !== "0")) croppedPlacementCount += 1;
+          } else {
+            expect(picture?.crop, label + ": unexpected exported crop").toBeUndefined();
+          }
         }
-      }
-      for (const [slideIndex, pictures] of slidePictures) {
-        const expected = selected.filter((image) => image.slideIndex === slideIndex).length;
-        expect(pictures, `${templateName}/${variant}: slide ${slideIndex + 1} native picture count`).toHaveLength(expected);
       }
     }
     expect(imageCount, `${templateName}: no selected template-backed images`).toBeGreaterThan(0);
