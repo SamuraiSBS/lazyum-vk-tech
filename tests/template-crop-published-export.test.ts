@@ -125,8 +125,6 @@ async function exportedPictures(archive: JSZip, slideIndex: number) {
 describe("template image crop through ordinary published generation and PPTX", () => {
   it.each(organizerTemplates)("preserves every selected image placement in published variants of %s", async (templateName) => {
     const template = await readFile(path.resolve(process.cwd(), "fixtures", "templates", "organizer", templateName));
-    const parsed = await parsePptxTemplate(template, templateName);
-    const layouts = new Map(parsed.layouts.map((layout) => [layout.id, layout]));
 
     const form = new FormData();
     form.set("template", new File([new Uint8Array(template)], templateName, {
@@ -140,11 +138,16 @@ describe("template image crop through ordinary published generation and PPTX", (
     const payload = await response.json();
     expect(response.status, JSON.stringify(payload)).toBe(200);
     const store = new ArtifactStore(artifactRoot);
+    const documents = Object.fromEntries(variants.map((variant) => [
+      variant,
+      presentationDocumentSchema.parse(payload.presentations[variant]),
+    ])) as Record<LayoutVariant, ReturnType<typeof presentationDocumentSchema.parse>>;
+    const layouts = new Map(documents.balanced.designSystem.layouts.map((layout) => [layout.id, layout]));
     let imageCount = 0;
     let croppedPlacementCount = 0;
 
     for (const variant of variants) {
-      const document = presentationDocumentSchema.parse(payload.presentations[variant]);
+      const document = documents[variant];
       const selected = document.slides.flatMap((slide, slideIndex) => [...slide.canvas.elements]
         .sort((left, right) => left.zIndex - right.zIndex)
         .filter((element): element is Extract<typeof element, { type: "image" }> =>
