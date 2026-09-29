@@ -12,6 +12,7 @@ import { auditPresentation } from "../../../lib/audit";
 import { parsePptxTemplate } from "../../../lib/template-parser";
 import { createArtifactStore } from "../../../lib/artifact-store";
 import { runPublishedGenerationJury } from "../../../lib/agent-orchestrator";
+import { resolveEffectiveSlideCount } from "../../../lib/slide-count";
 import {
   acquireHeavyOperation,
   limitRequestBody,
@@ -63,7 +64,8 @@ export async function POST(request: Request) {
     if (templateLimitResponse) return templateLimitResponse;
     const brief = String(form.get("brief") || "").trim();
     const requestedCount = Number(form.get("slideCount") || 10);
-    const slideCount = Math.max(5, Math.min(15, Number.isFinite(requestedCount) ? Math.round(requestedCount) : 10));
+    const selectedSlideCount = Math.max(5, Math.min(15, Number.isFinite(requestedCount) ? Math.round(requestedCount) : 10));
+    const { count: slideCount } = resolveEffectiveSlideCount(brief, selectedSlideCount);
     const materials = form.getAll("materials")
       .filter((entry): entry is File => typeof entry !== "string");
     const sourceCountLimitResponse = rejectTooManySources(materials.length);

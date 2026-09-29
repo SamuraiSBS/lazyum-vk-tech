@@ -611,11 +611,8 @@ function assertContained(
 function findFreeChartSlot(document: PresentationDocument, slideId: string) {
   const slide = document.slides.find((candidate) => candidate.id === slideId);
   if (!slide) throw new Error("Expected metrics slide");
-  // The fixture template places its title and body in the left column and
-  // artwork in the upper-right corner. Use the remaining lower-right area
-  // instead of assuming a wide empty region across the slide.
-  const w = 340;
-  const h = 320;
+  const w = 620;
+  const h = 290;
   for (let y = 0; y + h <= slide.canvas.height; y += 20) {
     for (let x = 0; x + w <= slide.canvas.width; x += 20) {
       const candidate = { x, y, w, h };

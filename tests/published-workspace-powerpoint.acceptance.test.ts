@@ -17,14 +17,13 @@ import { auditReportSchema, generationPlanningSchema, presentationDocumentSchema
 
 const templateName = "VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx";
 const reviewRoot = path.resolve(process.cwd(), ".agent-state", "tmp", "workspace-powerpoint-20260928");
-const hasRequiredHeap = /(?:^|\s)--max-old-space-size=8192(?:\s|$)/u.test(process.env.NODE_OPTIONS ?? "");
 
 function digest(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
 describe("ordinary published WorkSpace PowerPoint review artifact", () => {
-  it.skipIf(!hasRequiredHeap)("publishes an audited ten-slide Visual PPTX and retains exact review evidence", async () => {
+  it("publishes an audited ten-slide Visual PPTX and retains exact review evidence", async () => {
     expect(process.env.NODE_OPTIONS).toMatch(/(?:^|\s)--max-old-space-size=8192(?:\s|$)/u);
     await mkdir(reviewRoot, { recursive: true });
     const artifactRoot = path.join(reviewRoot, "artifacts");

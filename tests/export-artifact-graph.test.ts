@@ -8,7 +8,6 @@ import { POST as postHtml } from "../src/app/api/export/html/route";
 import { POST as postPdf } from "../src/app/api/export/pdf/route";
 import { auditPresentation } from "../src/lib/audit";
 import { ArtifactStore, sha256 } from "../src/lib/artifact-store";
-import { runPublishedGenerationJury } from "../src/lib/agent-orchestrator";
 import { inputSourceArtifact, normalizeContent } from "../src/lib/content-parser";
 import { createPresentationPlan } from "../src/lib/planner";
 import { renderPresentation } from "../src/lib/renderer";
@@ -206,9 +205,6 @@ async function createReadyGenerationJob(target: ArtifactStore) {
     variant,
     auditPresentation(documents[variant]),
   ])) as Record<LayoutVariant, ReturnType<typeof auditPresentation>>);
-  const saved = await target.readGenerationArtifactsForJury(job.jobId);
-  const jury = runPublishedGenerationJury(saved);
-  await target.saveGenerationOrchestration(job.jobId, jury.ranking, jury.stages);
   await target.markGenerationReady(job.jobId);
   return {
     jobId: job.jobId,

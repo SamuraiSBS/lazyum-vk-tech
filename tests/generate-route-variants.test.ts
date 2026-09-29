@@ -91,7 +91,7 @@ describe("POST /api/generate three-variant contract", () => {
       expect(table?.type).toBe("table");
       if (table?.type !== "table") continue;
       expect(table.rows.map((row) => row.map((cell) => cell.text))).toEqual([
-        ["Period", "Completed"], ["Q1", "42"], ["Q2", "57"],
+        ["", "Completed"], ["Q1", "42"], ["Q2", "57"],
       ]);
     }
   });
@@ -108,6 +108,51 @@ describe("POST /api/generate three-variant contract", () => {
 
     expect(response.status).toBe(413);
     expect(await response.json()).toMatchObject({ code: "BODY_TOO_LARGE" });
+  });
+
+  it("uses the explicit brief count instead of the selected count and persists that plan", async () => {
+    const response = await generate(createRequest(
+      await createFixtureTemplate("bright"),
+      "brief-count-priority.pptx",
+      "Подготовь 7 слайдов о внедрении сервиса",
+      10,
+    ));
+    const payload = await response.json() as {
+      presentations: Record<string, unknown>;
+      jobId: string;
+      manifest: unknown;
+    };
+
+    expect(response.status).toBe(200);
+    for (const variant of ["compact", "balanced", "visual"] as const) {
+      const document = presentationDocumentSchema.parse(payload.presentations[variant]);
+      expect(document.slides).toHaveLength(7);
+    }
+
+    const manifest = artifactManifestSchema.parse(payload.manifest);
+    if (!manifest.artifacts.planning) throw new Error("Expected a persisted planning artifact");
+    const planning = generationPlanningSchema.parse(JSON.parse(
+      (await new ArtifactStore(artifactRoot).readPublishedArtifact(payload.jobId, manifest.artifacts.planning.relativePath)).contents.toString("utf8"),
+    ));
+    expect(planning.presentationPlan.slides).toHaveLength(7);
+  });
+
+  it("uses the selected count when the brief does not specify a slide count", async () => {
+    const response = await generate(createRequest(
+      await createFixtureTemplate("bright"),
+      "selected-count-fallback.pptx",
+      "Подготовь питч сервиса для команды продукта",
+      10,
+    ));
+    const payload = await response.json() as {
+      presentations: Record<string, unknown>;
+    };
+
+    expect(response.status).toBe(200);
+    for (const variant of ["compact", "balanced", "visual"] as const) {
+      const document = presentationDocumentSchema.parse(payload.presentations[variant]);
+      expect(document.slides).toHaveLength(10);
+    }
   });
 
   it("plans once, returns exactly three variants, and keeps the balanced export alias usable", async () => {
@@ -178,13 +223,13 @@ describe("POST /api/generate three-variant contract", () => {
   });
 });
 
-function createRequest(template: Buffer, filename: string, brief: string) {
+function createRequest(template: Buffer, filename: string, brief: string, slideCount = 5) {
   const form = new FormData();
   form.set("template", new File([new Uint8Array(template)], filename, {
     type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   }));
   form.set("brief", brief);
-  form.set("slideCount", "5");
+  form.set("slideCount", String(slideCount));
   form.set("materials", new File(["Команда проверяет общий план и три контролируемых профиля."], "notes.txt", { type: "text/plain" }));
   return new Request("http://localhost/api/generate", { method: "POST", body: form });
 }

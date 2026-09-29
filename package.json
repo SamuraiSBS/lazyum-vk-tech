@@ -12,6 +12,7 @@
     "dev": "next dev --webpack -p 3030",
     "build": "next build --webpack",
     "start": "next start -p 3030",
+    "start:lockbox": "node scripts/start-with-lockbox.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:smoke": "vitest run tests/e2e-smoke.test.ts",

@@ -30,33 +30,11 @@ describe("presentation variants", () => {
 
     const sourceLayout = designSystem.layouts[0];
     if (!sourceLayout) throw new Error("Variant test requires a source layout");
-    const visualAnchor = {
-      id: "visual-profile-anchor",
-      type: "image" as const,
-      name: "Visual profile anchor",
-      x: sourceLayout.width * 0.72,
-      y: sourceLayout.height * 0.58,
-      w: sourceLayout.width * 0.18,
-      h: sourceLayout.height * 0.18,
-      text: "",
-      imageDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
-      zIndex: sourceLayout.elements.length,
-    };
     const profileDesign = {
       ...designSystem,
       layouts: [
-        { ...sourceLayout, id: "compact-profile", composition: "split" as const, visualSlots: 0, cardCount: 0 },
-        {
-          ...sourceLayout,
-          id: "visual-profile",
-          // Keep composition constant so this assertion measures the visual
-          // variant's profile preference, rather than the stronger semantic
-          // composition score for ordinary text slides.
-          composition: "split" as const,
-          elements: [...sourceLayout.elements, visualAnchor],
-          visualSlots: 1,
-          cardCount: 0,
-        },
+        { ...sourceLayout, id: "compact-profile", composition: "split" as const, textSlots: 10, visualSlots: 0, cardCount: 0 },
+        { ...sourceLayout, id: "visual-profile", composition: "visual" as const, textSlots: 1, visualSlots: 10, cardCount: 0 },
       ],
     };
     const profileSlide = { id: "profile", purpose: "context" as const, title: "Профиль", content: ["Короткий текст"], visualIntent: "none" as const };

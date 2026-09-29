@@ -18,15 +18,6 @@ import {
 import { publishedVariantRankingSchema } from "../src/lib/agent-contracts";
 import { createFixtureTemplate } from "./fixture-decks";
 
-vi.mock("../src/lib/request-guards", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/lib/request-guards")>();
-  const guard = actual.createProcessRequestGuard({
-    maxGenerationRequestsPerWindow: 100,
-    maxExportRequestsPerWindow: 100,
-  });
-  return { ...actual, acquireHeavyOperation: (kind: "generation" | "export") => guard.acquireHeavyOperation(kind) };
-});
-
 let artifactRoot: string;
 let previousArtifactRoot: string | undefined;
 let previousProvider: string | undefined;
